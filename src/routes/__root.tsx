@@ -6,11 +6,14 @@ import {
   useRouter,
   HeadContent,
   Scripts,
+  type ErrorComponentProps,
 } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Menu } from "lucide-react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { AppSidebar, SidebarBrand, SidebarNav } from "../components/AppSidebar";
 
 function NotFoundComponent() {
   return (
@@ -34,7 +37,7 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+function ErrorComponent({ error, reset }: ErrorComponentProps) {
   console.error(error);
   const router = useRouter();
   useEffect(() => {
@@ -54,7 +57,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
           <button
             onClick={() => {
               router.invalidate();
-              reset();
+              reset?.();
             }}
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
@@ -77,19 +80,23 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: "FraudLens — AI-Based Financial Fraud Detection (Academic Prototype)" },
+      {
+        name: "description",
+        content:
+          "Educational prototype dashboard for AI-based financial fraud detection, built with synthetic demonstration data.",
+      },
+      { name: "author", content: "Academic project" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:site", content: "@Lovable" },
     ],
     links: [
+      { rel: "stylesheet", href: appCss },
+      { rel: "preconnect", href: "https://fonts.googleapis.com" },
+      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
         rel: "stylesheet",
-        href: appCss,
+        href: "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap",
       },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
@@ -114,13 +121,46 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
+function MobileNav() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="md:hidden">
+      <div className="flex items-center justify-between border-b border-border bg-sidebar">
+        <SidebarBrand />
+        <button
+          type="button"
+          aria-label="Toggle navigation"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          className="mr-4 grid size-10 place-items-center rounded-lg text-sidebar-foreground hover:bg-sidebar-accent"
+        >
+          <Menu className="size-5" aria-hidden />
+        </button>
+      </div>
+      {open ? (
+        <div className="border-b border-sidebar-border bg-sidebar">
+          <SidebarNav onNavigate={() => setOpen(false)} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      <div className="flex min-h-screen bg-background">
+        <AppSidebar />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <MobileNav />
+          <main className="min-w-0 flex-1 px-4 py-6 sm:px-8 sm:py-8">
+            {/* Required: nested routes render here. */}
+            <Outlet />
+          </main>
+        </div>
+      </div>
     </QueryClientProvider>
   );
 }
