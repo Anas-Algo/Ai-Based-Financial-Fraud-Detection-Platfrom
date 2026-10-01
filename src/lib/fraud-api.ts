@@ -22,15 +22,17 @@ const REQUEST_TIMEOUT_MS = 15000;
 
 // ---------- Types: request ----------
 
-// NOTE: fields mirror the current form. They will change once the
-// Scikit-learn model's feature set is finalised.
+// NOTE: fields mirror the Analyze form and the selected fraud dataset
+// (transaction_id, amount, merchant_category, country, channel,
+// hours_since_prev_txn). user_id and device_id are intentionally excluded
+// until the model architecture handles them server-side.
 export type TransactionInput = {
   transactionId: string;
   amount: number;
   channel: string;
   merchantCategory: string;
-  originCountry: string;
-  accountAgeDays: number;
+  country: string;
+  hoursSincePrevTxn: number;
 };
 
 // ---------- Types: responses (endpoint contract) ----------
