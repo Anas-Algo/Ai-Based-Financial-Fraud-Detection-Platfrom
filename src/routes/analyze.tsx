@@ -88,7 +88,8 @@ function validate(form: FormState) {
   if (!form.merchantCategory) errors.merchantCategory = "Merchant category is required.";
   if (!form.country) errors.country = "Country is required.";
   const hours = Number(form.hoursSincePrevTxn);
-  if (!form.hoursSincePrevTxn.trim()) errors.hoursSincePrevTxn = "Hours since previous transaction is required.";
+  if (!form.hoursSincePrevTxn.trim())
+    errors.hoursSincePrevTxn = "Hours since previous transaction is required.";
   else if (Number.isNaN(hours) || hours < 0) errors.hoursSincePrevTxn = "Enter 0 or more hours.";
   return errors;
 }
