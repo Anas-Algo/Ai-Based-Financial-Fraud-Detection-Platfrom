@@ -39,8 +39,7 @@ export const demoTotals = {
   flagged: demoTransactions.filter((t) => t.label === "Flagged (sample)").length,
 };
 
-export const demoFraudRate =
-  Math.round((demoTotals.flagged / demoTotals.total) * 1000) / 10;
+export const demoFraudRate = Math.round((demoTotals.flagged / demoTotals.total) * 1000) / 10;
 
 export const demoTrend = Array.from({ length: 12 }, (_, i) => {
   const r = pseudoRandom(i + 20);
