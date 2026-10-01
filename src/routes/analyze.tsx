@@ -34,8 +34,8 @@ type FormState = {
   amount: string;
   channel: string;
   merchantCategory: string;
-  originCountry: string;
-  accountAgeDays: string;
+  country: string;
+  hoursSincePrevTxn: string;
 };
 
 const initialForm: FormState = {
@@ -43,11 +43,41 @@ const initialForm: FormState = {
   amount: "",
   channel: "Card",
   merchantCategory: "",
-  originCountry: "",
-  accountAgeDays: "",
+  country: "",
+  hoursSincePrevTxn: "",
 };
 
 const channels = ["Card", "Transfer", "Wallet", "ATM"];
+
+// Options are provisional until the dataset's exact category/country
+// vocabularies are confirmed; "Other" keeps the form usable meanwhile.
+const merchantCategories = [
+  "Groceries",
+  "Restaurants",
+  "Electronics",
+  "Clothing",
+  "Travel",
+  "Fuel",
+  "Healthcare",
+  "Entertainment",
+  "Utilities",
+  "Other",
+];
+
+const countries = [
+  "India",
+  "United States",
+  "United Kingdom",
+  "Germany",
+  "France",
+  "Canada",
+  "Australia",
+  "Singapore",
+  "United Arab Emirates",
+  "Brazil",
+  "Japan",
+  "Other",
+];
 
 function validate(form: FormState) {
   const errors: Partial<Record<keyof FormState, string>> = {};
@@ -55,11 +85,11 @@ function validate(form: FormState) {
   const amount = Number(form.amount);
   if (!form.amount.trim()) errors.amount = "Amount is required.";
   else if (Number.isNaN(amount) || amount <= 0) errors.amount = "Enter an amount greater than 0.";
-  if (!form.merchantCategory.trim()) errors.merchantCategory = "Merchant category is required.";
-  if (!form.originCountry.trim()) errors.originCountry = "Origin country is required.";
-  const age = Number(form.accountAgeDays);
-  if (!form.accountAgeDays.trim()) errors.accountAgeDays = "Account age is required.";
-  else if (Number.isNaN(age) || age < 0) errors.accountAgeDays = "Enter 0 or more days.";
+  if (!form.merchantCategory) errors.merchantCategory = "Merchant category is required.";
+  if (!form.country) errors.country = "Country is required.";
+  const hours = Number(form.hoursSincePrevTxn);
+  if (!form.hoursSincePrevTxn.trim()) errors.hoursSincePrevTxn = "Hours since previous transaction is required.";
+  else if (Number.isNaN(hours) || hours < 0) errors.hoursSincePrevTxn = "Enter 0 or more hours.";
   return errors;
 }
 
