@@ -3,21 +3,21 @@ import { LayoutDashboard, ScanSearch, History, BarChart3, Info, ShieldCheck } fr
 
 const navItems = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { to: "/analyze", label: "Analyze Transaction", icon: ScanSearch },
-  { to: "/history", label: "Transaction History", icon: History },
-  { to: "/analytics", label: "Analytics", icon: BarChart3 },
-  { to: "/about", label: "About", icon: Info },
+  { to: "/analyze", label: "Analyze Transaction", icon: ScanSearch, exact: false },
+  { to: "/history", label: "Transaction History", icon: History, exact: false },
+  { to: "/analytics", label: "Analytics", icon: BarChart3, exact: false },
+  { to: "/about", label: "About", icon: Info, exact: false },
 ] as const;
 
 export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <nav className="flex flex-col gap-1 p-3" aria-label="Main">
-      {navItems.map(({ to, label, icon: Icon, ...rest }) => (
+      {navItems.map(({ to, label, icon: Icon, exact }) => (
         <Link
           key={to}
           to={to}
           onClick={onNavigate}
-          activeOptions={{ exact: "exact" in rest ? rest.exact : false }}
+          activeOptions={{ exact }}
           className="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[status=active]:bg-sidebar-primary data-[status=active]:text-sidebar-primary-foreground"
         >
           <Icon className="size-4 shrink-0" aria-hidden />
