@@ -28,7 +28,7 @@ export const demoTransactions: DemoTransaction[] = Array.from({ length: 48 }, (_
     id: `TXN-${(100245 + i * 13).toString()}`,
     amount: Math.round((50 + r * 9450) * 100) / 100,
     timestamp: date.toISOString(),
-    channel: channels[i % channels.length],
+    channel: channels[i % channels.length]!,
     label: flagged ? "Flagged (sample)" : "Legitimate (sample)",
   };
 });

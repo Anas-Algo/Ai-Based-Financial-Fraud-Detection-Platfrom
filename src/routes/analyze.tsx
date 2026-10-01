@@ -240,9 +240,10 @@ function Field({
   label: string;
   value: string;
   onChange: (value: string) => void;
-  error?: string;
-  placeholder?: string;
-  type?: string;
+  error?: string | undefined;
+  placeholder?: string | undefined;
+  type?: string | undefined;
+
 }) {
   return (
     <div className="grid gap-2">
