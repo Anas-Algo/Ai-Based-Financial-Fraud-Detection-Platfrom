@@ -14,6 +14,7 @@ import { Menu } from "lucide-react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { AppSidebar, SidebarBrand, SidebarNav } from "../components/AppSidebar";
+import { Toaster } from "../components/ui/sonner";
 
 function NotFoundComponent() {
   return (
@@ -161,6 +162,7 @@ function RootComponent() {
           </main>
         </div>
       </div>
+      <Toaster position="top-right" />
     </QueryClientProvider>
   );
 }

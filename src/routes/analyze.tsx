@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { Loader2, PlugZap } from "lucide-react";
+import { toast } from "sonner";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -91,6 +92,8 @@ function AnalyzePage() {
     });
     setResult(response);
     setLoading(false);
+    if (response.status === "error") toast.error(response.message);
+    else if (response.status === "not_connected") toast.info(response.message);
   }
 
   return (
@@ -212,6 +215,21 @@ function AnalyzePage() {
                   Flask REST API is integrated. No risk score or label is generated here.
                 </p>
               </div>
+            ) : result?.status === "ok" ? (
+              <dl className="grid grid-cols-2 gap-3 rounded-xl border border-border p-4">
+                <dt className="text-muted-foreground">Prediction</dt>
+                <dd className="font-semibold">{result.prediction.label}</dd>
+                <dt className="text-muted-foreground">Confidence</dt>
+                <dd>{(result.prediction.confidence * 100).toFixed(1)}%</dd>
+                {result.prediction.riskLevel ? (
+                  <>
+                    <dt className="text-muted-foreground">Risk level</dt>
+                    <dd className="capitalize">{result.prediction.riskLevel}</dd>
+                  </>
+                ) : null}
+                <dt className="text-muted-foreground">Transaction</dt>
+                <dd className="font-mono text-xs">{result.prediction.transactionId}</dd>
+              </dl>
             ) : result?.status === "error" ? (
               <p className="rounded-xl bg-destructive/10 p-4 text-destructive">{result.message}</p>
             ) : (
