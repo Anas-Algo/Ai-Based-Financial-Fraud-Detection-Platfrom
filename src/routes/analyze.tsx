@@ -117,8 +117,8 @@ function AnalyzePage() {
       amount: Number(form.amount),
       channel: form.channel,
       merchantCategory: form.merchantCategory,
-      originCountry: form.originCountry,
-      accountAgeDays: Number(form.accountAgeDays),
+      country: form.country,
+      hoursSincePrevTxn: Number(form.hoursSincePrevTxn),
     });
     setResult(response);
     setLoading(false);
@@ -173,30 +173,60 @@ function AnalyzePage() {
                   ))}
                 </select>
               </div>
+              <div className="grid gap-2">
+                <Label htmlFor="merchantCategory">Merchant category</Label>
+                <select
+                  id="merchantCategory"
+                  value={form.merchantCategory}
+                  onChange={(e) => set("merchantCategory")(e.target.value)}
+                  aria-invalid={Boolean(errors.merchantCategory)}
+                  aria-describedby={errors.merchantCategory ? "merchantCategory-error" : undefined}
+                  className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="">Select a category</option>
+                  {merchantCategories.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+                {errors.merchantCategory ? (
+                  <p id="merchantCategory-error" className="text-xs text-destructive">
+                    {errors.merchantCategory}
+                  </p>
+                ) : null}
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="country">Country</Label>
+                <select
+                  id="country"
+                  value={form.country}
+                  onChange={(e) => set("country")(e.target.value)}
+                  aria-invalid={Boolean(errors.country)}
+                  aria-describedby={errors.country ? "country-error" : undefined}
+                  className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="">Select a country</option>
+                  {countries.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+                {errors.country ? (
+                  <p id="country-error" className="text-xs text-destructive">
+                    {errors.country}
+                  </p>
+                ) : null}
+              </div>
               <Field
-                id="merchantCategory"
-                label="Merchant category"
-                value={form.merchantCategory}
-                onChange={set("merchantCategory")}
-                error={errors.merchantCategory}
-                placeholder="Electronics"
-              />
-              <Field
-                id="originCountry"
-                label="Origin country"
-                value={form.originCountry}
-                onChange={set("originCountry")}
-                error={errors.originCountry}
-                placeholder="India"
-              />
-              <Field
-                id="accountAgeDays"
-                label="Account age (days)"
+                id="hoursSincePrevTxn"
+                label="Hours since previous transaction"
                 type="number"
-                value={form.accountAgeDays}
-                onChange={set("accountAgeDays")}
-                error={errors.accountAgeDays}
-                placeholder="420"
+                value={form.hoursSincePrevTxn}
+                onChange={set("hoursSincePrevTxn")}
+                error={errors.hoursSincePrevTxn}
+                placeholder="6"
               />
 
               <div className="flex flex-wrap gap-3 sm:col-span-2">
