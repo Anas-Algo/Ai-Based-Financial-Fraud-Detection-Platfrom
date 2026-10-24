@@ -86,8 +86,24 @@ def save_transaction(db_path: str, record: Dict[str, Any]) -> Dict[str, Any]:
     fraud_prob = float(record.get("fraud_probability", record.get("fraudProbability", 0.0)))
     confidence = float(record.get("confidence", 1.0 - fraud_prob if is_fraud == 0 else fraud_prob))
     risk_level = str(record.get("risk_level") or record.get("riskLevel") or "Low")
-    timestamp = str(record.get("timestamp") or datetime.now(IST_TZ).isoformat())
-    created_at = datetime.now(timezone.utc).isoformat()
+    has_txn_time = record.get("hasTransactionTime")
+    if has_txn_time is None:
+        has_txn_time = record.get("has_transaction_time")
+
+    provided_ts = (
+        record.get("transactionTime")
+        or record.get("transaction_time")
+        or record.get("timestamp")
+    )
+    if has_txn_time is None:
+        has_txn_time = bool(provided_ts and str(provided_ts).strip())
+
+    timestamp = str(provided_ts or datetime.now(IST_TZ).isoformat())
+    created_at = str(
+        record.get("created_at")
+        or record.get("createdAt")
+        or datetime.now(IST_TZ).isoformat()
+    )
 
     with get_db(db_path) as conn:
         cursor = conn.cursor()
@@ -152,7 +168,12 @@ def save_transaction(db_path: str, record: Dict[str, Any]) -> Dict[str, Any]:
         "risk_level": risk_level,
         "riskLevel": risk_level,
         "timestamp": timestamp,
+        "transactionTime": timestamp if has_txn_time else None,
+        "transaction_time": timestamp if has_txn_time else None,
+        "hasTransactionTime": bool(has_txn_time),
+        "has_transaction_time": bool(has_txn_time),
         "created_at": created_at,
+        "createdAt": created_at,
     }
 
 
@@ -178,6 +199,29 @@ def get_transactions(db_path: str, limit: int = 100) -> Tuple[List[Dict[str, Any
 
     results: List[Dict[str, Any]] = []
     for r in rows:
+        ts = r["timestamp"]
+        ca = r["created_at"]
+        has_txn_time = False
+        if ts and ca:
+            try:
+                import pandas as _pd
+                t_dt = _pd.to_datetime(ts)
+                c_dt = _pd.to_datetime(ca)
+                if not _pd.isna(t_dt) and not _pd.isna(c_dt):
+                    t_epoch = (
+                        t_dt.timestamp()
+                        if t_dt.tzinfo is not None
+                        else t_dt.tz_localize(IST_TZ).timestamp()
+                    )
+                    c_epoch = (
+                        c_dt.timestamp()
+                        if c_dt.tzinfo is not None
+                        else c_dt.tz_localize(timezone.utc).timestamp()
+                    )
+                    has_txn_time = abs(t_epoch - c_epoch) > 60
+            except Exception:
+                has_txn_time = ts != ca
+
         results.append({
             "transactionId": r["transaction_id"],
             "transaction_id": r["transaction_id"],
@@ -198,8 +242,13 @@ def get_transactions(db_path: str, limit: int = 100) -> Tuple[List[Dict[str, Any
             "confidence": round(float(r["confidence"]), 4),
             "risk_level": r["risk_level"],
             "riskLevel": r["risk_level"],
-            "timestamp": r["timestamp"],
-            "created_at": r["created_at"],
+            "timestamp": ts,
+            "transactionTime": ts if has_txn_time else None,
+            "transaction_time": ts if has_txn_time else None,
+            "hasTransactionTime": has_txn_time,
+            "has_transaction_time": has_txn_time,
+            "created_at": ca,
+            "createdAt": ca,
         })
 
     return results, total

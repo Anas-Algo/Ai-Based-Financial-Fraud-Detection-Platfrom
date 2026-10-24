@@ -217,6 +217,62 @@ class FraudLensApiTestCase(unittest.TestCase):
             saved = save_transaction(self.test_db_path, record)
             self.assertEqual(saved["timestamp"], raw_ts)
 
+    def test_13_historical_dataset_timestamp_distinguished_from_analysis_time(self):
+        """Verify historical payment timestamp is distinguished from analysis time."""
+        payload = {
+            "transactionId": "TXN-HISTORICAL-01",
+            "amount": 180.0,
+            "channel": "Card",
+            "merchantCategory": "shopping_net",
+            "transactionTime": "2019-01-02 01:06:37",
+        }
+        res = self.client.post("/api/predict", json=payload)
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+
+        self.assertEqual(data["transactionId"], "TXN-HISTORICAL-01")
+        self.assertEqual(data["timestamp"], "2019-01-02 01:06:37")
+        self.assertEqual(data["transactionTime"], "2019-01-02 01:06:37")
+        self.assertTrue(data["hasTransactionTime"])
+        self.assertIn("createdAt", data)
+        # Analysis time is contemporary (not 2019)
+        self.assertNotIn("2019", data["createdAt"])
+
+        # Check /api/transactions persistence
+        hist_res = self.client.get("/api/transactions")
+        self.assertEqual(hist_res.status_code, 200)
+        txns = hist_res.get_json()["transactions"]
+        match = next((t for t in txns if t["transactionId"] == "TXN-HISTORICAL-01"), None)
+        self.assertIsNotNone(match)
+        self.assertEqual(match["timestamp"], "2019-01-02 01:06:37")
+        self.assertTrue(match["hasTransactionTime"])
+
+    def test_14_manually_submitted_transaction_missing_timestamp(self):
+        """Verify transaction submitted without payment time is marked as analysis time."""
+        payload = {
+            "transactionId": "TXN-MANUAL-NO-TIME-01",
+            "amount": 95.0,
+            "channel": "UPI",
+            "merchantCategory": "Groceries",
+            "country": "India",
+        }
+        res = self.client.post("/api/predict", json=payload)
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+
+        self.assertEqual(data["transactionId"], "TXN-MANUAL-NO-TIME-01")
+        self.assertFalse(data["hasTransactionTime"])
+        self.assertIsNone(data["transactionTime"])
+        self.assertIn("timestamp", data)
+        self.assertIn("createdAt", data)
+
+        # Check in history
+        hist_res = self.client.get("/api/transactions")
+        txns = hist_res.get_json()["transactions"]
+        match = next((t for t in txns if t["transactionId"] == "TXN-MANUAL-NO-TIME-01"), None)
+        self.assertIsNotNone(match)
+        self.assertFalse(match["hasTransactionTime"])
+
 
 if __name__ == "__main__":
     unittest.main()

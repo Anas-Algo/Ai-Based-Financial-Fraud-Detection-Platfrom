@@ -32,6 +32,7 @@ export type TransactionInput = {
   channel: string;
   merchantCategory: string;
   country: string;
+  transactionTime?: string;
   hoursSincePrevTxn?: number;
 };
 
@@ -49,6 +50,9 @@ export type Prediction = {
   riskLevel: RiskLevel;
   amount: number;
   timestamp: string; // ISO 8601
+  transactionTime?: string | null;
+  hasTransactionTime?: boolean;
+  createdAt?: string;
   channel?: string;
   merchantCategory?: string;
   country?: string;
@@ -62,6 +66,9 @@ export type ApiTransaction = {
   id: string;
   amount: number;
   timestamp: string;
+  transactionTime?: string | null;
+  hasTransactionTime?: boolean;
+  createdAt?: string;
   channel: string;
   merchantCategory: string;
   country: string;
@@ -275,11 +282,22 @@ export function normalizePrediction(raw: unknown): Prediction {
 
   const riskLevel = parseRiskLevel(raw["riskLevel"] ?? raw["risk_level"], fraudProbability);
 
-  const rawTimestamp = String(raw["timestamp"] || raw["created_at"] || "").trim();
+  const rawTimestamp = String(
+    raw["transactionTime"] || raw["timestamp"] || raw["created_at"] || "",
+  ).trim();
   const validTimestamp =
     rawTimestamp && !Number.isNaN(Date.parse(rawTimestamp))
       ? rawTimestamp
       : new Date().toISOString();
+
+  const rawCreatedAt = String(raw["createdAt"] || raw["created_at"] || "").trim();
+  const createdAt =
+    rawCreatedAt && !Number.isNaN(Date.parse(rawCreatedAt)) ? rawCreatedAt : undefined;
+
+  const hasTransactionTime = Boolean(
+    raw["hasTransactionTime"] ?? raw["has_transaction_time"] ?? false,
+  );
+  const transactionTime = hasTransactionTime ? validTimestamp : null;
 
   return {
     transactionId,
@@ -290,6 +308,9 @@ export function normalizePrediction(raw: unknown): Prediction {
     riskLevel,
     amount: rawAmount,
     timestamp: validTimestamp,
+    transactionTime,
+    hasTransactionTime,
+    createdAt,
     channel: typeof raw["channel"] === "string" ? raw["channel"] : "Card",
     merchantCategory:
       typeof raw["merchantCategory"] === "string"
@@ -319,11 +340,32 @@ export function normalizeTransactionItem(raw: unknown): ApiTransaction {
   const timestamp =
     rawTime && !Number.isNaN(Date.parse(rawTime)) ? rawTime : new Date().toISOString();
 
+  const rawCreatedAt = String(raw["createdAt"] || raw["created_at"] || "").trim();
+  const createdAt =
+    rawCreatedAt && !Number.isNaN(Date.parse(rawCreatedAt)) ? rawCreatedAt : undefined;
+
+  let hasTransactionTime = Boolean(
+    raw["hasTransactionTime"] ?? raw["has_transaction_time"] ?? false,
+  );
+  if (!hasTransactionTime && timestamp && createdAt) {
+    const tTime = Date.parse(timestamp);
+    const cTime = Date.parse(createdAt);
+    if (!Number.isNaN(tTime) && !Number.isNaN(cTime)) {
+      if (Math.abs(tTime - cTime) > 60_000) {
+        hasTransactionTime = true;
+      }
+    }
+  }
+  const transactionTime = hasTransactionTime ? timestamp : null;
+
   return {
     transactionId,
     id: transactionId,
     amount: Number.isFinite(amount) ? amount : 0,
     timestamp,
+    transactionTime,
+    hasTransactionTime,
+    createdAt,
     channel: typeof raw["channel"] === "string" ? raw["channel"] : "Card",
     merchantCategory: String(raw["merchantCategory"] || raw["merchant_category"] || "Other"),
     country: String(raw["country"] || "Other"),

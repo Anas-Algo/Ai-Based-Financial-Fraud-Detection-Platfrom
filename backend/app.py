@@ -259,18 +259,32 @@ def predict():
     except (ValueError, TypeError):
         hours_since_prev = 0.0
 
-    # 6. Transaction time & derived features
-    # Timestamps default to current India Standard Time (Asia/Kolkata) with explicit offset.
-    raw_time = data.get("timestamp", data.get("trans_date_trans_time"))
+    # 6. Transaction time vs Recorded/Analysis time
+    # Check whether the client explicitly provided a payment transaction time:
+    raw_time = (
+        data.get("transactionTime")
+        or data.get("transaction_time")
+        or data.get("timestamp")
+        or data.get("trans_date_trans_time")
+    )
+    if isinstance(raw_time, str):
+        raw_time = raw_time.strip()
+
+    analysis_now = datetime.now(IST_TZ)
+    has_transaction_time = False
+
     if raw_time:
         try:
-            tx_dt = pd.to_datetime(raw_time)
-            if pd.isna(tx_dt):
-                tx_dt = datetime.now(IST_TZ)
+            parsed_dt = pd.to_datetime(raw_time)
+            if not pd.isna(parsed_dt):
+                tx_dt = parsed_dt
+                has_transaction_time = True
+            else:
+                tx_dt = analysis_now
         except Exception:
-            tx_dt = datetime.now(IST_TZ)
+            tx_dt = analysis_now
     else:
-        tx_dt = datetime.now(IST_TZ)
+        tx_dt = analysis_now
 
     # 7. Documented defensible defaults for model features not in frontend form
     # The dataset requires demographic and location features.
@@ -338,6 +352,11 @@ def predict():
         }), 500
 
     # 10. Persist transaction into SQLite database
+    tx_timestamp_str = (
+        raw_time
+        if (has_transaction_time and isinstance(raw_time, str) and raw_time)
+        else (tx_dt.isoformat() if hasattr(tx_dt, "isoformat") else str(tx_dt))
+    )
     saved_record = save_transaction(
         get_db_path(),
         {
@@ -353,7 +372,9 @@ def predict():
             "fraud_probability": fraud_prob,
             "confidence": confidence,
             "risk_level": risk_level,
-            "timestamp": tx_dt.isoformat() if hasattr(tx_dt, "isoformat") else str(tx_dt),
+            "timestamp": tx_timestamp_str,
+            "has_transaction_time": has_transaction_time,
+            "created_at": analysis_now.isoformat(),
         },
     )
 
