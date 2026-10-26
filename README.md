@@ -21,7 +21,7 @@ The platform simulates how fintech companies, payment gateways, and banking secu
 ## 2. Technology Stack
 
 ### Backend & Machine Learning
-- **Python**: 3.10+ (tested on Python 3.14)
+- **Python**: 3.10+ (verified and tested on Python 3.14.2)
 - **Framework**: Flask 3.x with Flask-CORS for cross-origin communication
 - **Machine Learning**: Scikit-learn (Pipeline, `RandomForestClassifier`, `ColumnTransformer`, `OneHotEncoder`, `SimpleImputer`)
 - **Data Manipulation**: Pandas, NumPy
@@ -30,7 +30,7 @@ The platform simulates how fintech companies, payment gateways, and banking secu
 - **Testing**: Python standard library `unittest`
 
 ### Frontend Application
-- **Runtime & Package Manager**: Node.js 20+ / npm
+- **Runtime & Package Manager**: Node.js 20+ (tested on Node.js v24.21.0) / npm (tested on npm 11.19.0)
 - **Core Framework**: React 19 with TypeScript
 - **Full-Stack Routing & SSR**: TanStack Start (TanStack Router + Nitro server engine)
 - **State & Server Cache**: TanStack Query v5 (React Query)
@@ -153,13 +153,19 @@ Open **Terminal 1** (PowerShell or Command Prompt):
 
 1. Navigate to the `backend` directory:
    ```powershell
-   cd "C:\Users\mdana\OneDrive\Desktop\AI-BASED FINANCIAL FROUD DETECTION\backend"
+   cd "backend"
    ```
 
 2. *(Optional but Recommended)* Create and activate a Python virtual environment:
    ```powershell
    python -m venv venv
+
+   # On Windows PowerShell (if script execution is restricted, temporarily bypass for current shell):
+   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
    .\venv\Scripts\Activate.ps1
+
+   # Or in Command Prompt (cmd.exe):
+   .\venv\Scripts\activate.bat
    ```
 
 3. Install the required Python packages:
@@ -198,7 +204,7 @@ Open **Terminal 2** (keep Terminal 1 running):
 
 1. Navigate to the frontend directory:
    ```powershell
-   cd "C:\Users\mdana\OneDrive\Desktop\AI-BASED FINANCIAL FROUD DETECTION\frontend\lovable_project"
+   cd "frontend\lovable_project"
    ```
 
 2. Install the frontend dependencies:
@@ -206,11 +212,17 @@ Open **Terminal 2** (keep Terminal 1 running):
    npm install
    ```
 
-3. Configure the environment URL (Optional — defaults to `http://127.0.0.1:5000`):
-   Create a `.env.local` file in `frontend/lovable_project/`:
-   ```env
-   VITE_FLASK_API_URL=http://127.0.0.1:5000
-   ```
+3. Configure the environment URL (Optional):
+   - By default, `src/lib/fraud-api.ts` connects directly to `http://127.0.0.1:5000`.
+   - If you need to specify a custom host or port, copy the example environment file:
+     ```powershell
+     copy .env.example .env.local
+     ```
+   - Inside `.env.local`:
+     ```env
+     VITE_FLASK_API_URL=http://localhost:5000
+     ```
+   - **Security note**: The `.gitignore` file strictly excludes `.env`, `.env.local`, `.env.*.local`, and database files. No private keys, secrets, or credentials are required or stored.
 
 4. Run frontend code linting:
    ```powershell
@@ -222,10 +234,11 @@ Open **Terminal 2** (keep Terminal 1 running):
    npm run dev
    ```
 
-6. Open your web browser and navigate to:
+6. Check the terminal output for the local server URL (the TanStack Start Vite server binds to **`http://localhost:8080`** by default, or `8081` if 8080 is busy):
    ```text
-   http://localhost:3000
+   ➜  Local:   http://localhost:8080/
    ```
+   Open this URL in your web browser.
 
 ---
 
@@ -345,14 +358,18 @@ Open **Terminal 2** (keep Terminal 1 running):
 ### 4. Summary Statistics
 - **Method**: `GET`
 - **Route**: `/api/stats`
-- **Description**: Returns aggregate audit metrics with zero-division protection.
+- **Description**: Returns aggregate audit metrics with zero-division protection (includes camelCase standard keys and snake_case aliases).
 - **Response `200 OK`**:
   ```json
   {
     "totalTransactions": 24,
     "legitimateTransactions": 16,
     "fraudulentTransactions": 8,
-    "fraudRate": 33.33
+    "fraudRate": 33.33,
+    "total_transactions": 24,
+    "legitimate_count": 16,
+    "fraud_count": 8,
+    "fraud_rate": 33.33
   }
   ```
 
