@@ -331,5 +331,214 @@
     "masked_inference_features": "Under UI inference, six features ('gender', 'lat', 'long', 'city_pop', 'merch_lat', 'merch_long') are not collected from the user. In backend/app.py, they are passed as numpy.nan to the pipeline's fitted SimpleImputer, which fills them with population training medians and modes. This benchmark quantifies the empirical impact of this imputation on held-out test data.",
     "temporal_split_limitation": "The held-out evaluation set was partitioned using stratified random sampling (test_size=0.20, random_state=42), matching train_model.py. Transactions from future dates exist in both partitions. An out-of-time (OOT) evaluation on subsequent dates is recommended for strict temporal validation.",
     "account_grouping_limitation": "Card numbers (cc_num) were withheld from training features but not grouped during splitting. Transactions from the same synthetic customer appear in both train and test partitions."
+  },
+  "unseen_cardholder_benchmark": {
+    "evaluation_timestamp": "2026-10-27T00:47:15.570368+05:30",
+    "split_strategy": {
+      "method": "StratifiedGroupKFold",
+      "group_column": "cc_num",
+      "n_splits": 5,
+      "selected_fold": 1,
+      "random_state": 42,
+      "total_unique_cardholders": 983,
+      "train_unique_cardholders": 786,
+      "test_unique_cardholders": 197,
+      "cardholder_overlap_count": 0,
+      "train_samples": 1037433,
+      "train_fraud_samples": 6005,
+      "train_legitimate_samples": 1031428,
+      "train_fraud_prevalence_pct": 0.5788,
+      "test_samples": 259242,
+      "test_fraud_samples": 1501,
+      "test_legitimate_samples": 257741,
+      "test_fraud_prevalence_pct": 0.579
+    },
+    "model_metadata": {
+      "pipeline_type": "Pipeline",
+      "classifier": "RandomForestClassifier",
+      "n_estimators": 100,
+      "class_weight": "balanced_subsample",
+      "random_state": 42,
+      "training_split": "StratifiedGroupKFold Fold 1 (786 training cardholders, 197 unseen cardholders held out)",
+      "is_production_model": false,
+      "production_model_preserved": true,
+      "training_duration_sec": 90.01
+    },
+    "full_feature_evaluation": {
+      "inference_duration_sec": 0.77,
+      "decision_threshold": 0.5,
+      "precision": 0.9285,
+      "recall": 0.6835,
+      "f1_score": 0.7874,
+      "accuracy": 0.9979,
+      "average_precision_pr_auc": 0.8552,
+      "roc_auc": 0.9793,
+      "confusion_matrix": {
+        "true_positives": 1026,
+        "false_positives": 79,
+        "false_negatives": 475,
+        "true_negatives": 257662
+      },
+      "threshold_analysis": [
+        {
+          "threshold": 0.3,
+          "description": "Medium Risk Threshold (Flags suspicious transactions for verification)",
+          "precision": 0.8441,
+          "recall": 0.7755,
+          "f1_score": 0.8083,
+          "true_positives": 1164,
+          "false_positives": 215,
+          "false_negatives": 337,
+          "true_negatives": 257526
+        },
+        {
+          "threshold": 0.5,
+          "description": "Standard Decision Boundary (Default binary classification cutoff)",
+          "precision": 0.9269,
+          "recall": 0.6922,
+          "f1_score": 0.7925,
+          "true_positives": 1039,
+          "false_positives": 82,
+          "false_negatives": 462,
+          "true_negatives": 257659
+        },
+        {
+          "threshold": 0.7,
+          "description": "High Risk Threshold (Conservative cutoff minimizing false alarms)",
+          "precision": 0.9682,
+          "recall": 0.5876,
+          "f1_score": 0.7313,
+          "true_positives": 882,
+          "false_positives": 29,
+          "false_negatives": 619,
+          "true_negatives": 257712
+        }
+      ]
+    },
+    "ui_imputed_evaluation": {
+      "description": "Simulation of UI inference conditions on unseen cardholders (uncollected features masked with np.nan and imputed by pipeline)",
+      "masked_features": [
+        "gender",
+        "lat",
+        "long",
+        "city_pop",
+        "merch_lat",
+        "merch_long"
+      ],
+      "inference_duration_sec": 1.0,
+      "decision_threshold": 0.5,
+      "precision": 0.8996,
+      "recall": 0.7102,
+      "f1_score": 0.7937,
+      "accuracy": 0.9979,
+      "average_precision_pr_auc": 0.8386,
+      "roc_auc": 0.9786,
+      "confusion_matrix": {
+        "true_positives": 1066,
+        "false_positives": 119,
+        "false_negatives": 435,
+        "true_negatives": 257622
+      },
+      "threshold_analysis": [
+        {
+          "threshold": 0.3,
+          "description": "Medium Risk Threshold (Flags suspicious transactions for verification)",
+          "precision": 0.7756,
+          "recall": 0.7828,
+          "f1_score": 0.7792,
+          "true_positives": 1175,
+          "false_positives": 340,
+          "false_negatives": 326,
+          "true_negatives": 257401
+        },
+        {
+          "threshold": 0.5,
+          "description": "Standard Decision Boundary (Default binary classification cutoff)",
+          "precision": 0.8961,
+          "recall": 0.7129,
+          "f1_score": 0.7941,
+          "true_positives": 1070,
+          "false_positives": 124,
+          "false_negatives": 431,
+          "true_negatives": 257617
+        },
+        {
+          "threshold": 0.7,
+          "description": "High Risk Threshold (Conservative cutoff minimizing false alarms)",
+          "precision": 0.9499,
+          "recall": 0.6063,
+          "f1_score": 0.7401,
+          "true_positives": 910,
+          "false_positives": 48,
+          "false_negatives": 591,
+          "true_negatives": 257693
+        }
+      ]
+    },
+    "comparative_summary": {
+      "evaluated_samples": 259242,
+      "fraud_samples": 1501,
+      "legitimate_samples": 257741,
+      "fraud_prevalence_pct": 0.579,
+      "metrics_comparison": {
+        "precision": {
+          "full_features": 0.9285,
+          "ui_imputed": 0.8996,
+          "delta": -0.0289
+        },
+        "recall": {
+          "full_features": 0.6835,
+          "ui_imputed": 0.7102,
+          "delta": 0.0267
+        },
+        "f1_score": {
+          "full_features": 0.7874,
+          "ui_imputed": 0.7937,
+          "delta": 0.0063
+        },
+        "accuracy": {
+          "full_features": 0.9979,
+          "ui_imputed": 0.9979,
+          "delta": 0.0
+        },
+        "average_precision_pr_auc": {
+          "full_features": 0.8552,
+          "ui_imputed": 0.8386,
+          "delta": -0.0166
+        },
+        "roc_auc": {
+          "full_features": 0.9793,
+          "ui_imputed": 0.9786,
+          "delta": -0.0007
+        }
+      },
+      "confusion_matrix_comparison": {
+        "true_positives": {
+          "full_features": 1026,
+          "ui_imputed": 1066,
+          "delta": 40
+        },
+        "false_positives": {
+          "full_features": 79,
+          "ui_imputed": 119,
+          "delta": 40
+        },
+        "false_negatives": {
+          "full_features": 475,
+          "ui_imputed": 435,
+          "delta": -40
+        },
+        "true_negatives": {
+          "full_features": 257662,
+          "ui_imputed": 257622,
+          "delta": -40
+        }
+      }
+    },
+    "methodology_disclosures": {
+      "offline_simulation_disclosure": "IMPORTANT: These are offline research benchmark evaluations on synthetic transaction dataset partitions, not verified performance metrics on real-world bank, credit card, or UPI transactions. The UI-imputed evaluation simulates the exact feature availability of the live web application by masking uncollected inputs with numpy.nan, but does not prove live production efficacy.",
+      "unseen_cardholder_isolation": "Card numbers (cc_num) were used as grouping identifiers in StratifiedGroupKFold. All 197 cardholders in the test partition were completely withheld from training (0 overlapping accounts). This measures the model's true capability to generalize to new, previously unseen cardholders.",
+      "masked_inference_features": "Under UI inference, six features ('gender', 'lat', 'long', 'city_pop', 'merch_lat', 'merch_long') are not collected from the user. In backend/app.py, they are passed as numpy.nan to the pipeline's fitted SimpleImputer, which fills them with population training medians and modes. This benchmark quantifies the empirical impact of this imputation on held-out unseen cardholders."
+    }
   }
 }

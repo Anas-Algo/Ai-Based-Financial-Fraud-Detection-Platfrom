@@ -454,6 +454,84 @@ class FraudLensApiTestCase(unittest.TestCase):
         self.assertIn("masked_inference_features", disclosures)
         self.assertIn("temporal_split_limitation", disclosures)
 
+    def test_19_unseen_cardholder_benchmark_verification(self):
+        """Verify that evaluation_report.json contains isolated unseen-cardholder benchmark with disjoint groups and mathematical consistency."""
+        report_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "evaluation_report.json")
+        self.assertTrue(os.path.exists(report_path), f"Report not found at {report_path}")
+
+        with open(report_path, "r", encoding="utf-8") as f:
+            report = json.load(f)
+
+        self.assertIn("unseen_cardholder_benchmark", report, "unseen_cardholder_benchmark missing from report")
+        unseen_bench = report["unseen_cardholder_benchmark"]
+
+        # 1. Verify split strategy and disjoint groups
+        self.assertIn("split_strategy", unseen_bench)
+        split = unseen_bench["split_strategy"]
+        self.assertEqual(split["method"], "StratifiedGroupKFold")
+        self.assertEqual(split["group_column"], "cc_num")
+        self.assertEqual(split["cardholder_overlap_count"], 0)
+        self.assertEqual(split["total_unique_cardholders"], 983)
+        self.assertEqual(split["train_unique_cardholders"], 786)
+        self.assertEqual(split["test_unique_cardholders"], 197)
+        self.assertEqual(split["train_unique_cardholders"] + split["test_unique_cardholders"], split["total_unique_cardholders"])
+
+        test_samples = split["test_samples"]
+        test_fraud = split["test_fraud_samples"]
+        test_legit = split["test_legitimate_samples"]
+        self.assertEqual(test_samples, 259242)
+        self.assertEqual(test_fraud, 1501)
+        self.assertEqual(test_legit, 257741)
+        self.assertEqual(test_samples, test_fraud + test_legit)
+
+        # 2. Verify model metadata shows production model protection
+        model_meta = unseen_bench["model_metadata"]
+        self.assertFalse(model_meta["is_production_model"])
+        self.assertTrue(model_meta["production_model_preserved"])
+
+        # 3. Verify mathematical consistency for both unseen-cardholder configurations
+        for config_name in ["full_feature_evaluation", "ui_imputed_evaluation"]:
+            self.assertIn(config_name, unseen_bench)
+            sec = unseen_bench[config_name]
+            cm = sec["confusion_matrix"]
+            tp = cm["true_positives"]
+            fp = cm["false_positives"]
+            fn = cm["false_negatives"]
+            tn = cm["true_negatives"]
+
+            # Balance checks
+            self.assertEqual(tp + fp + fn + tn, test_samples, f"{config_name}: CM sum != test_samples")
+            self.assertEqual(tp + fn, test_fraud, f"{config_name}: TP + FN != test_fraud")
+            self.assertEqual(tn + fp, test_legit, f"{config_name}: TN + FP != test_legit")
+
+            # Derived metrics checks
+            calc_prec = tp / (tp + fp)
+            calc_rec = tp / (tp + fn)
+            calc_f1 = (2 * calc_prec * calc_rec) / (calc_prec + calc_rec)
+            calc_acc = (tp + tn) / test_samples
+
+            self.assertAlmostEqual(sec["precision"], calc_prec, places=3, msg=f"{config_name} precision mismatch")
+            self.assertAlmostEqual(sec["recall"], calc_rec, places=3, msg=f"{config_name} recall mismatch")
+            self.assertAlmostEqual(sec["f1_score"], calc_f1, places=3, msg=f"{config_name} F1 mismatch")
+            self.assertAlmostEqual(sec["accuracy"], calc_acc, places=3, msg=f"{config_name} accuracy mismatch")
+
+            # Probabilistic metrics
+            self.assertTrue(0.0 <= sec["average_precision_pr_auc"] <= 1.0)
+            self.assertTrue(0.0 <= sec["roc_auc"] <= 1.0)
+
+        # 4. Verify comparative summary
+        comp = unseen_bench["comparative_summary"]
+        self.assertEqual(comp["evaluated_samples"], test_samples)
+        f_prec = unseen_bench["full_feature_evaluation"]["precision"]
+        i_prec = unseen_bench["ui_imputed_evaluation"]["precision"]
+        self.assertAlmostEqual(comp["metrics_comparison"]["precision"]["delta"], round(i_prec - f_prec, 4), places=4)
+
+        # 5. Verify disclosures
+        disclosures = unseen_bench["methodology_disclosures"]
+        self.assertIn("offline_simulation_disclosure", disclosures)
+        self.assertIn("unseen_cardholder_isolation", disclosures)
+        self.assertIn("masked_inference_features", disclosures)
+
 
 if __name__ == "__main__":
     unittest.main()
