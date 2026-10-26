@@ -105,7 +105,9 @@ AI-BASED FINANCIAL FRAUD DETECTION/
 │   ├── app.py                         # Flask REST API server & inference endpoints
 │   ├── database.py                    # SQLite initialization, schema, queries & IST handling
 │   ├── train_model.py                 # Pipeline training, validation & serialization script
-│   ├── test_api.py                    # 14-test automated API test suite
+│   ├── evaluate_model.py              # Comparative offline evaluation script (dual benchmarks)
+│   ├── evaluation_report.json         # Serialized metrics, confusion matrices & disclosures
+│   ├── test_api.py                    # 18-test automated API and benchmark test suite
 │   ├── transactions.db               # SQLite audit database (auto-generated at runtime)
 │   └── requirements.txt               # Backend Python dependencies
 ├── frontend/
@@ -182,7 +184,7 @@ Open **Terminal 1** (PowerShell or Command Prompt):
    ```powershell
    python -m unittest test_api.py -v
    ```
-   *(All 14 tests should pass with `OK`).*
+   *(All 18 tests should pass with `OK`).*
 
 6. Start the Flask API server:
    ```powershell
@@ -248,6 +250,7 @@ Open **Terminal 2** (keep Terminal 1 running):
 |---|---|---|
 | Run Backend API | `backend/` | `python app.py` |
 | Run Backend Unit Tests | `backend/` | `python -m unittest test_api.py -v` |
+| Run Model Evaluation Benchmark | `backend/` | `python evaluate_model.py` |
 | Train / Retrain ML Model | `backend/` | `python train_model.py` |
 | Install Frontend Dependencies | `frontend/lovable_project/` | `npm install` |
 | Run Frontend Dev Server | `frontend/lovable_project/` | `npm run dev` |
@@ -436,7 +439,47 @@ The model outputs raw class probabilities via `predict_proba`. Fraud probability
 
 ---
 
-## 9. Timestamp & Timezone Conventions
+## 9. Model Evaluation and Limitations
+
+FraudLens implements an offline model evaluation suite ([`backend/evaluate_model.py`](backend/evaluate_model.py)) that measures the performance of the saved Scikit-learn Random Forest pipeline ([`backend/model/fraud_detection_pipeline.pkl`](backend/model/fraud_detection_pipeline.pkl)) against held-out test data without retraining.
+
+To maintain academic rigor and transparency, the platform benchmarks the model under two distinct configurations evaluated on the **exact same 259,335-row held-out partition** (containing 1,501 fraud cases and 257,834 legitimate cases, with a fraud prevalence of 0.5788%):
+
+1. **Full-Feature Benchmark (Idealized Baseline)**: Evaluates the model when all 11 original dataset features (including true demographic coordinates and city population) are available.
+2. **UI-Imputed Benchmark (Realistic Live Inference)**: Evaluates the exact same held-out rows after replacing the six features not collected in the Analyze form (`gender`, `lat`, `long`, `city_pop`, `merch_lat`, `merch_long`) with `numpy.nan`, exactly simulating live inference in [`backend/app.py`](backend/app.py) where the pipeline's fitted `SimpleImputer` steps supply learned training medians and modes.
+
+### Comparative Benchmark Results
+
+| Metric | Full-feature benchmark | UI-imputed benchmark |
+|---|---:|---:|
+| Precision | 93.77% | 87.91% |
+| Recall | 73.15% | 70.75% |
+| F1-score | 0.8219 | 0.7841 |
+| Accuracy | 99.82% | 99.77% |
+| PR-AUC / Average Precision | 0.8888 | 0.8395 |
+| ROC-AUC | 0.9907 | 0.9803 |
+| True positives | 1,098 | 1,062 |
+| False positives | 73 | 146 |
+| False negatives | 403 | 439 |
+| True negatives | 257,761 | 257,688 |
+
+*Decision threshold: 0.50. Evaluated on the 20% stratified held-out test split of `fraudTrain.csv` ($N = 259,335$). Report serialized at [`backend/evaluation_report.json`](backend/evaluation_report.json).*
+
+### Key Evaluation Findings
+- **Feature Gap Impact**: Omitting uncollected demographic and geographic inputs causes precision to decrease by **5.86%** ($93.77\% \to 87.91\%$) and false alarms to double ($73 \to 146$), while recall experiences a modest reduction of **2.40%** ($73.15\% \to 70.75\%$).
+- **Dominant Predictive Features**: The classifier maintains solid discriminative ability ($F_1 = 0.7841$, $\text{PR-AUC} = 0.8395$) under UI imputation because transaction amount (`amt`, 59.0% feature importance), merchant category (`category`, 13.9% importance), and transaction hour (`transaction_hour`, 15.8% importance) represent over 88% of the model's total feature weight.
+
+### Critical Methodology Limitations
+1. **Synthetic/Offline Dataset**: The dataset is synthetic/offline, not verified real bank or UPI traffic. These results represent an offline benchmark rather than live operational performance.
+2. **Stratified Random vs. Chronological Split**: The split is stratified and random, not chronological. Transactions from the same date ranges appear across both train and test partitions.
+3. **Cardholder Account Overlap**: All 969 unique test-set cardholders also occur in the training set (credit card numbers `cc_num` were withheld from features but not grouped during partitioning).
+4. **Generalization Uncertainty**: Performance on unseen customers and future transactions remains unverified.
+5. **Simulation vs. Live Guarantee**: The UI-imputed benchmark is a simulation of the current input behavior, not a live production accuracy guarantee.
+6. **Metadata Fields**: `channel` and `country` are metadata and are not active model features in the underlying credit card Random Forest classifier.
+
+---
+
+## 10. Timestamp & Timezone Conventions
 
 - **Indian Context**: The application uses **India Standard Time (`Asia/Kolkata`, UTC+05:30)** consistently.
 - **Distinction of Timestamps**:
@@ -446,7 +489,7 @@ The model outputs raw class probabilities via `predict_proba`. Fraud probability
 
 ---
 
-## 10. Database Schema (`transactions.db`)
+## 11. Database Schema (`transactions.db`)
 
 The SQLite audit database creates the following table schema automatically upon first startup:
 
@@ -474,11 +517,11 @@ CREATE INDEX IF NOT EXISTS idx_tx_fraud ON transactions (is_fraud);
 
 ---
 
-## 11. Testing & Verification Summary
+## 12. Testing & Verification Summary
 
 The project includes continuous verification suites:
 
-- **Backend Test Suite (`test_api.py`)**: 14 automated test cases covering:
+- **Backend Test Suite (`test_api.py`)**: 18 automated test cases covering:
   - API health status and model availability
   - Input validation (missing body, empty amount, negative values, non-numeric strings)
   - Normalization of legitimate and fraudulent inference payloads
@@ -486,6 +529,12 @@ The project includes continuous verification suites:
   - Zero-division safety in statistical calculations
   - Complete chart aggregation contract tests for analytics
   - Strict preservation of ISO 8601 timestamps and IST timezone fallbacks
+  - Missing feature imputation handling via `SimpleImputer` learned statistics
+  - Explicit coordinate and demographic pass-through verification
+  - Programmatic verification of the dual-benchmark evaluation report consistency
+- **Offline Model Evaluator (`evaluate_model.py`)**:
+  - Reproducible offline benchmark script measuring both full-feature and UI-imputed performance
+  - Exports serialized metrics, confusion matrices, and risk threshold analyses to `backend/evaluation_report.json`
 - **Frontend Code Quality**:
   - `npm run lint`: ESLint with TypeScript rules (0 errors)
   - `npm run build`: Production bundle compilation (Client, SSR, and Nitro server workers)
@@ -493,9 +542,9 @@ The project includes continuous verification suites:
 
 ---
 
-## 12. Limitations & Academic Prototype Disclosure
+## 13. Limitations & Academic Prototype Disclosure
 
-1. **Simulation Environment**: This platform is an **academic and research prototype**. It does not integrate with live clearing networks (e.g., NPCI UPI Switch, Visa/Mastercard networks, or SWIFT).
-2. **Feature Imputation**: Demographic features (such as user latitude/longitude and population) utilize documented neutral median defaults when transactions are submitted manually through the UI form.
+1. **Simulation Environment**: This platform is an **academic and research prototype**. It does not integrate with live clearing networks (e.g., NPCI UPI Switch, Visa/Mastercard networks, Core Banking Systems, or SWIFT).
+2. **Feature Imputation**: Demographic and geographic features not gathered in the UI use the fitted pipeline's learned training medians and modes (`SimpleImputer`), which serves as a privacy-preserving baseline.
 3. **Model Retraining**: In a production enterprise setting, models are retrained periodically on streaming event queues (e.g., Kafka / Flink). FraudLens relies on the pre-trained offline pipeline for inference.
 4. **Demonstration Mode**: If the Flask backend service is offline, the frontend provides an optional synthetic demonstration mode to allow visual exploration of UI widgets without crashing.
