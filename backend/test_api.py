@@ -13,8 +13,9 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from app import DB_PATH, app, model
+from app import DB_PATH, app, explainer, model
 from database import IST_TZ, init_db, save_transaction
+from explanation import DecisionPathExplainer
 
 
 class FraudLensApiTestCase(unittest.TestCase):
@@ -632,6 +633,233 @@ class FraudLensApiTestCase(unittest.TestCase):
         self.assertIn("chronological_out_of_time_separation", disclosures)
         self.assertIn("cardholder_overlap_distinction", disclosures)
         self.assertIn("masked_inference_features", disclosures)
+
+    def test_21_explanation_probability_reconstruction_and_additivity(self):
+        """Verify decision-path probability reconstruction and additivity within 1e-7 across diverse inputs."""
+        self.assertIsNotNone(explainer, "DecisionPathExplainer must be initialized")
+
+        test_inputs = [
+            {"amt": 15.0, "category": "grocery_pos", "transaction_hour": 10, "transaction_day": 3, "transaction_month": 5},
+            {"amt": 125.50, "category": "gas_transport", "transaction_hour": 8, "transaction_day": 14, "transaction_month": 8},
+            {"amt": 980.0, "category": "shopping_net", "transaction_hour": 23, "transaction_day": 21, "transaction_month": 11},
+            {"amt": 3500.0, "category": "misc_net", "transaction_hour": 2, "transaction_day": 1, "transaction_month": 1},
+            {"amt": 45.0, "category": "travel", "transaction_hour": 14, "transaction_day": 15, "transaction_month": 6},
+        ]
+
+        for idx, t_in in enumerate(test_inputs):
+            df = pd.DataFrame([{
+                "category": t_in["category"],
+                "gender": np.nan,
+                "amt": t_in["amt"],
+                "lat": np.nan,
+                "long": np.nan,
+                "city_pop": np.nan,
+                "merch_lat": np.nan,
+                "merch_long": np.nan,
+                "transaction_hour": t_in["transaction_hour"],
+                "transaction_day": t_in["transaction_day"],
+                "transaction_month": t_in["transaction_month"],
+            }])
+
+            res = explainer.explain(df)
+
+            # Reconstruction error check: strictly within 1e-7
+            self.assertLess(res["reconstruction_error"], 1e-7, f"Input {idx}: Reconstruction error exceeded 1e-7")
+
+            # Probability bounds
+            self.assertTrue(0.0 <= res["base_probability"] <= 1.0)
+            self.assertTrue(0.0 <= res["predicted_probability"] <= 1.0)
+
+            # Direct additivity check: base_probability + sum(feat_contribs) == predicted_probability
+            model_prob = float(model.predict_proba(df)[0, explainer.fraud_class_idx])
+            self.assertAlmostEqual(res["predicted_probability"], model_prob, places=4)
+
+    def test_22_explanation_determinism(self):
+        """Verify that repeated explanations for the identical transaction are bit-for-bit deterministic."""
+        self.assertIsNotNone(explainer)
+
+        df = pd.DataFrame([{
+            "category": "shopping_net",
+            "gender": np.nan,
+            "amt": 850.0,
+            "lat": np.nan,
+            "long": np.nan,
+            "city_pop": np.nan,
+            "merch_lat": np.nan,
+            "merch_long": np.nan,
+            "transaction_hour": 22,
+            "transaction_day": 18,
+            "transaction_month": 9,
+        }])
+
+        first = explainer.explain(df)
+        for _ in range(5):
+            repeated = explainer.explain(df)
+            self.assertEqual(first["base_probability"], repeated["base_probability"])
+            self.assertEqual(first["predicted_probability"], repeated["predicted_probability"])
+            self.assertEqual(first["imputed_context_contribution"], repeated["imputed_context_contribution"])
+            self.assertEqual(first["effective_baseline_probability"], repeated["effective_baseline_probability"])
+            self.assertEqual(len(first["factors"]), len(repeated["factors"]))
+            for f1, f2 in zip(first["factors"], repeated["factors"]):
+                self.assertEqual(f1["feature"], f2["feature"])
+                self.assertEqual(f1["value"], f2["value"])
+                self.assertEqual(f1["contribution"], f2["contribution"])
+                self.assertEqual(f1["impact_percentage"], f2["impact_percentage"])
+                self.assertEqual(f1["direction"], f2["direction"])
+
+    def test_23_explanation_no_imputed_features_in_user_factors(self):
+        """Verify that imputed uncollected features (gender, coords, city_pop) are never presented as user-provided factors."""
+        self.assertIsNotNone(explainer)
+
+        df = pd.DataFrame([{
+            "category": "shopping_pos",
+            "gender": np.nan,
+            "amt": 250.0,
+            "lat": np.nan,
+            "long": np.nan,
+            "city_pop": np.nan,
+            "merch_lat": np.nan,
+            "merch_long": np.nan,
+            "transaction_hour": 15,
+            "transaction_day": 10,
+            "transaction_month": 4,
+        }])
+
+        res = explainer.explain(df)
+        factor_features = [f["feature"] for f in res["factors"]]
+
+        forbidden = {"gender", "lat", "long", "city_pop", "merch_lat", "merch_long", "Gender", "Latitude", "Longitude", "City Pop"}
+        for f_name in factor_features:
+            self.assertNotIn(f_name, forbidden)
+            self.assertIn(f_name, ["Amount", "Merchant Category", "Transaction Hour", "Transaction Day", "Transaction Month"])
+
+        # Verify isolation metadata
+        self.assertIsInstance(res["imputed_context_contribution"], float)
+        self.assertEqual(
+            res["imputed_features_isolated"],
+            ["city_pop", "gender", "lat", "long", "merch_lat", "merch_long"],
+        )
+
+    def test_24_explanation_merchant_category_aggregation(self):
+        """Verify that all one-hot category dummy contributions are aggregated into one Merchant Category factor."""
+        self.assertIsNotNone(explainer)
+
+        df = pd.DataFrame([{
+            "category": "shopping_net",
+            "gender": np.nan,
+            "amt": 950.0,
+            "lat": np.nan,
+            "long": np.nan,
+            "city_pop": np.nan,
+            "merch_lat": np.nan,
+            "merch_long": np.nan,
+            "transaction_hour": 23,
+            "transaction_day": 12,
+            "transaction_month": 7,
+        }])
+
+        res = explainer.explain(df)
+        category_factors = [f for f in res["factors"] if f["feature"] == "Merchant Category"]
+
+        # Must have at most one Merchant Category factor
+        self.assertLessEqual(len(category_factors), 1)
+        if category_factors:
+            cat_f = category_factors[0]
+            self.assertEqual(cat_f["value"], "shopping_net")
+            self.assertIn("shopping_net", cat_f["description"])
+
+        # Ensure no raw one-hot dummy column names leak into the explanation
+        for f in res["factors"]:
+            self.assertFalse(f["feature"].startswith("categorical__"))
+            self.assertFalse("category_" in f["feature"])
+
+    def test_25_api_predict_backward_compatibility_with_explanations(self):
+        """Verify POST /api/predict response preserves all existing fields and includes valid explanations."""
+        payload = {
+            "transactionId": "TXN-EXPL-001",
+            "amount": 950.0,
+            "channel": "UPI",
+            "merchantCategory": "shopping_net",
+            "country": "India",
+            "hoursSincePrevTxn": 6.5,
+        }
+
+        response = self.client.post("/api/predict", json=payload)
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+
+        # Verify existing contract fields
+        expected_fields = [
+            "transactionId", "amount", "channel", "merchantCategory", "country",
+            "hoursSincePrevTxn", "prediction", "label", "is_fraud",
+            "fraud_probability", "confidence", "risk_level", "timestamp", "created_at",
+        ]
+        for field in expected_fields:
+            self.assertIn(field, data, f"Missing expected field: {field}")
+
+        # Verify explanations payload
+        self.assertIn("explanations", data)
+        exp = data["explanations"]
+        self.assertIsNotNone(exp)
+        self.assertEqual(exp["attribution_method"], "Decision Tree Path Decomposition (Saabas)")
+        self.assertEqual(exp["target_class"], "Fraudulent")
+        self.assertIn("base_probability", exp)
+        self.assertIn("predicted_probability", exp)
+        self.assertIn("imputed_context_contribution", exp)
+        self.assertIn("effective_baseline_probability", exp)
+        self.assertIn("factors", exp)
+        self.assertIn("disclaimer", exp)
+        self.assertIn("associative patterns", exp["disclaimer"].lower())
+        self.assertNotIn("confirmed fraud", exp["disclaimer"].lower())
+
+    def test_26_explanation_edge_cases_and_error_handling(self):
+        """Verify explanation engine handling of edge cases and input validation errors."""
+        self.assertIsNotNone(explainer)
+
+        # 1. Edge case: extremely small amount ($0.01)
+        small_df = pd.DataFrame([{
+            "category": "grocery_pos",
+            "gender": np.nan,
+            "amt": 0.01,
+            "lat": np.nan,
+            "long": np.nan,
+            "city_pop": np.nan,
+            "merch_lat": np.nan,
+            "merch_long": np.nan,
+            "transaction_hour": 12,
+            "transaction_day": 1,
+            "transaction_month": 1,
+        }])
+        small_res = explainer.explain(small_df)
+        self.assertLess(small_res["reconstruction_error"], 1e-7)
+        self.assertEqual(small_res["predicted_probability"], 0.0)
+
+        # 2. Edge case: maximum allowable amount ($100,000,000)
+        large_df = pd.DataFrame([{
+            "category": "shopping_net",
+            "gender": np.nan,
+            "amt": 100_000_000.0,
+            "lat": np.nan,
+            "long": np.nan,
+            "city_pop": np.nan,
+            "merch_lat": np.nan,
+            "merch_long": np.nan,
+            "transaction_hour": 23,
+            "transaction_day": 31,
+            "transaction_month": 12,
+        }])
+        large_res = explainer.explain(large_df)
+        self.assertLess(large_res["reconstruction_error"], 1e-7)
+
+        # 3. Invalid inputs to explain(): non-DataFrame or empty DataFrame
+        with self.assertRaises(TypeError):
+            explainer.explain({"not": "a dataframe"})
+
+        with self.assertRaises(ValueError):
+            explainer.explain(pd.DataFrame())  # 0 rows
+
+        with self.assertRaises(ValueError):
+            explainer.explain(pd.concat([small_df, large_df]))  # 2 rows
 
 
 if __name__ == "__main__":

@@ -74,6 +74,7 @@ init_db(get_db_path())
 model = None
 fraud_class_idx: int = 1
 legit_class_idx: int = 0
+explainer = None
 
 try:
     if os.path.exists(MODEL_PATH):
@@ -87,11 +88,21 @@ try:
             fraud_class_idx = classes.index(1) if 1 in classes else 1
             legit_class_idx = classes.index(0) if 0 in classes else 0
             print(f"Model classes: {classes} (Fraud index: {fraud_class_idx}, Legit index: {legit_class_idx})")
+
+        # Initialize decision-path explanation engine
+        try:
+            from explanation import DecisionPathExplainer
+            explainer = DecisionPathExplainer(model)
+            print("Decision path explanation engine initialized successfully.")
+        except Exception as exc:
+            print(f"Warning: Could not initialize explanation engine: {exc}")
+            explainer = None
     else:
         print(f"Warning: Model file not found at {MODEL_PATH}")
 except Exception as exc:
     print(f"Error loading model: {exc}")
     model = None
+    explainer = None
 
 
 # ==========================================
@@ -389,6 +400,17 @@ def predict():
             "created_at": analysis_now.isoformat(),
         },
     )
+
+    # 11. Generate per-transaction decision-path explanations
+    explanations = None
+    if explainer is not None:
+        try:
+            explanations = explainer.explain(input_df)
+        except Exception as exc:
+            app.logger.warning(f"Could not compute prediction explanations: {exc}")
+            explanations = None
+
+    saved_record["explanations"] = explanations
 
     return jsonify(saved_record), 200
 
