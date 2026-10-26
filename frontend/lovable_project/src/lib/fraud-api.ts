@@ -40,6 +40,29 @@ export type TransactionInput = {
 
 export type RiskLevel = "Low" | "Medium" | "High";
 
+export type ExplanationFactor = {
+  feature: string;
+  value: string | number;
+  contribution: number;
+  impact_percentage: string;
+  direction: "increases_risk" | "decreases_risk";
+  description: string;
+};
+
+export type PredictionExplanations = {
+  attribution_method: string;
+  target_class: string;
+  base_probability: number;
+  predicted_probability: number;
+  imputed_context_contribution: number;
+  effective_baseline_probability: number;
+  threshold: number;
+  factors: ExplanationFactor[];
+  imputed_features_isolated: string[];
+  reconstruction_error?: number;
+  disclaimer: string;
+};
+
 /** POST /api/predict response */
 export type Prediction = {
   transactionId: string;
@@ -58,6 +81,7 @@ export type Prediction = {
   country?: string;
   hoursSincePrevTxn?: number;
   isFraud?: number;
+  explanations?: PredictionExplanations | null;
 };
 
 /** GET /api/transactions item */
@@ -299,6 +323,71 @@ export function normalizePrediction(raw: unknown): Prediction {
   );
   const transactionTime = hasTransactionTime ? validTimestamp : null;
 
+  // Normalize optional explanation breakdown
+  let explanations: PredictionExplanations | null = null;
+  if (isObj(raw["explanations"])) {
+    const rawExp = raw["explanations"] as Record<string, unknown>;
+    const rawFactors = Array.isArray(rawExp["factors"]) ? rawExp["factors"] : [];
+    const normalizedFactors: ExplanationFactor[] = [];
+
+    for (const item of rawFactors) {
+      if (isObj(item)) {
+        const feature = String(item["feature"] || "").trim();
+        const rawVal = item["value"];
+        const value =
+          typeof rawVal === "number" || typeof rawVal === "string" ? rawVal : String(rawVal ?? "");
+        const contrib = Number(item["contribution"] ?? 0);
+        const impact_percentage = String(
+          item["impact_percentage"] || `${(contrib * 100).toFixed(1)}%`,
+        );
+        const direction: "increases_risk" | "decreases_risk" =
+          item["direction"] === "increases_risk" || contrib > 0
+            ? "increases_risk"
+            : "decreases_risk";
+        const description = String(item["description"] || "");
+
+        if (feature) {
+          normalizedFactors.push({
+            feature,
+            value,
+            contribution: Number.isFinite(contrib) ? contrib : 0,
+            impact_percentage,
+            direction,
+            description,
+          });
+        }
+      }
+    }
+
+    explanations = {
+      attribution_method: String(
+        rawExp["attribution_method"] || "Decision Tree Path Decomposition",
+      ),
+      target_class: String(rawExp["target_class"] || "Fraudulent"),
+      base_probability: Number(rawExp["base_probability"] ?? 0.5),
+      predicted_probability: Number(rawExp["predicted_probability"] ?? fraudProbability),
+      imputed_context_contribution: Number(rawExp["imputed_context_contribution"] ?? 0),
+      effective_baseline_probability: Number(
+        rawExp["effective_baseline_probability"] ??
+          Number(rawExp["base_probability"] ?? 0.5) +
+            Number(rawExp["imputed_context_contribution"] ?? 0),
+      ),
+      threshold: Number(rawExp["threshold"] ?? 0.01),
+      factors: normalizedFactors,
+      imputed_features_isolated: Array.isArray(rawExp["imputed_features_isolated"])
+        ? rawExp["imputed_features_isolated"].map(String)
+        : [],
+      reconstruction_error:
+        typeof rawExp["reconstruction_error"] === "number"
+          ? rawExp["reconstruction_error"]
+          : undefined,
+      disclaimer: String(
+        rawExp["disclaimer"] ||
+          "Model attributions quantify how feature values shifted the prediction relative to the training prior and do not represent confirmed external causes.",
+      ),
+    };
+  }
+
   return {
     transactionId,
     prediction,
@@ -319,6 +408,7 @@ export function normalizePrediction(raw: unknown): Prediction {
     country: typeof raw["country"] === "string" ? raw["country"] : "Other",
     hoursSincePrevTxn: isFiniteNum(raw["hoursSincePrevTxn"]) ? raw["hoursSincePrevTxn"] : 0,
     isFraud: raw["is_fraud"] === 1 || raw["isFraud"] === 1 || label === "Fraudulent" ? 1 : 0,
+    explanations,
   };
 }
 

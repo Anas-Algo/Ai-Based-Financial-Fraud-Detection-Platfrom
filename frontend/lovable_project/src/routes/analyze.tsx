@@ -10,6 +10,8 @@ import {
   PlugZap,
   RotateCcw,
   ShieldCheck,
+  TrendingDown,
+  TrendingUp,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -489,6 +491,139 @@ function AnalyzePage() {
                     </>
                   ) : null}
                 </dl>
+
+                {result.prediction.explanations ? (
+                  <div className="space-y-3 rounded-xl border border-border/70 bg-card p-4">
+                    <div className="flex items-center justify-between pb-1 border-b border-border/50">
+                      <div>
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-foreground">
+                          Model Feature Attributions
+                        </h4>
+                        <p className="text-[11px] text-muted-foreground">
+                          Decision-path probability deltas relative to baseline
+                        </p>
+                      </div>
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] border-primary/30 text-primary"
+                      >
+                        Threshold ≥ ±1.0%
+                      </Badge>
+                    </div>
+
+                    {/* Baseline & Imputed Context Information */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 rounded-lg bg-muted/40 p-2.5 text-xs">
+                      <div>
+                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground block">
+                          Ensemble Prior Baseline
+                        </span>
+                        <span className="font-semibold text-foreground">
+                          {(result.prediction.explanations.base_probability * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground block">
+                          Imputed Context Effect
+                        </span>
+                        <span className="font-semibold text-foreground">
+                          {result.prediction.explanations.imputed_context_contribution > 0
+                            ? "+"
+                            : ""}
+                          {(
+                            result.prediction.explanations.imputed_context_contribution * 100
+                          ).toFixed(1)}
+                          %
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground block">
+                          Effective Baseline
+                        </span>
+                        <span className="font-semibold text-foreground">
+                          {(
+                            result.prediction.explanations.effective_baseline_probability * 100
+                          ).toFixed(1)}
+                          %
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground leading-tight px-0.5">
+                      Note: Uncollected demographic & geographic features (gender, coordinates, city
+                      population) are held at training dataset medians/modes as static background
+                      context and are not user-submitted factors.
+                    </p>
+
+                    {/* Factors List */}
+                    <div className="space-y-2 pt-1">
+                      <span className="text-[11px] font-medium text-foreground block">
+                        Active Input Drivers (|Impact| ≥ 1.0%):
+                      </span>
+                      {result.prediction.explanations.factors &&
+                      result.prediction.explanations.factors.length > 0 ? (
+                        <div className="space-y-2">
+                          {result.prediction.explanations.factors.map((factor) => {
+                            const isIncrease = factor.direction === "increases_risk";
+                            return (
+                              <div
+                                key={factor.feature}
+                                className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 rounded-lg border border-border/60 bg-muted/20 p-2.5 text-xs transition-colors"
+                              >
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-semibold text-foreground">
+                                      {factor.feature}
+                                    </span>
+                                    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                                      Value: {String(factor.value)}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-muted-foreground leading-normal">
+                                    {factor.description}
+                                  </p>
+                                </div>
+                                <div className="flex items-center sm:flex-col sm:items-end gap-1.5 shrink-0">
+                                  <span
+                                    className={`inline-flex items-center gap-1 font-mono text-xs font-bold ${
+                                      isIncrease
+                                        ? "text-destructive"
+                                        : "text-emerald-600 dark:text-emerald-400"
+                                    }`}
+                                  >
+                                    {isIncrease ? (
+                                      <TrendingUp className="size-3.5" aria-hidden />
+                                    ) : (
+                                      <TrendingDown className="size-3.5" aria-hidden />
+                                    )}
+                                    {factor.impact_percentage}
+                                  </span>
+                                  <span
+                                    className={`text-[10px] font-medium uppercase tracking-wider ${
+                                      isIncrease
+                                        ? "text-destructive/90"
+                                        : "text-emerald-600/90 dark:text-emerald-400/90"
+                                    }`}
+                                  >
+                                    {isIncrease ? "Increases Risk" : "Decreases Risk"}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="rounded-lg border border-dashed border-border/80 p-3 text-center text-xs text-muted-foreground italic">
+                          No individual active input shifted model fraud probability by more than
+                          the ±1.0% threshold relative to baseline.
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Non-causal Disclaimer */}
+                    <div className="border-t border-border/50 pt-2 text-[10px] text-muted-foreground leading-relaxed italic">
+                      {result.prediction.explanations.disclaimer}
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="rounded-lg border border-border/60 bg-muted/30 p-2.5 text-[11px] text-muted-foreground leading-relaxed">
                   <span className="font-semibold text-foreground/85">Evaluation basis:</span>{" "}
