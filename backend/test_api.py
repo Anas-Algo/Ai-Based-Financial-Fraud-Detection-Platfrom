@@ -4,12 +4,16 @@ Runs against the Flask test client without needing a live network port.
 """
 
 import json
+import math
 import os
 import shutil
 import tempfile
 import unittest
 
-from app import DB_PATH, app
+import numpy as np
+import pandas as pd
+
+from app import DB_PATH, app, model
 from database import IST_TZ, init_db, save_transaction
 
 
@@ -272,6 +276,116 @@ class FraudLensApiTestCase(unittest.TestCase):
         match = next((t for t in txns if t["transactionId"] == "TXN-MANUAL-NO-TIME-01"), None)
         self.assertIsNotNone(match)
         self.assertFalse(match["hasTransactionTime"])
+
+    def test_15_imputation_handles_missing_uncollected_features(self):
+        """Verify that missing uncollected features (gender, lat, long, etc.) produce valid finite predictions."""
+        payload = {
+            "transactionId": "TXN-IMPUTE-TEST-01",
+            "amount": 125.75,
+            "channel": "UPI",
+            "merchantCategory": "Restaurants",
+            "country": "India",
+        }
+        res = self.client.post("/api/predict", json=payload)
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+
+        self.assertEqual(data["transactionId"], "TXN-IMPUTE-TEST-01")
+        self.assertIn(data["prediction"], ["Legitimate", "Fraudulent"])
+        self.assertIn(data["label"], ["Legitimate", "Fraudulent"])
+        self.assertIn(data["is_fraud"], [0, 1])
+
+        # Validate probabilities are finite floats in [0, 1]
+        fraud_prob = data["fraud_probability"]
+        conf = data["confidence"]
+        self.assertTrue(math.isfinite(fraud_prob))
+        self.assertTrue(math.isfinite(conf))
+        self.assertGreaterEqual(fraud_prob, 0.0)
+        self.assertLessEqual(fraud_prob, 1.0)
+        self.assertGreaterEqual(conf, 0.0)
+        self.assertLessEqual(conf, 1.0)
+        self.assertIn(data["risk_level"], ["Low", "Medium", "High"])
+
+        # Backward compatible response fields
+        expected_fields = [
+            "transactionId",
+            "amount",
+            "channel",
+            "merchantCategory",
+            "country",
+            "prediction",
+            "label",
+            "is_fraud",
+            "fraud_probability",
+            "confidence",
+            "risk_level",
+            "timestamp",
+            "createdAt",
+            "hasTransactionTime",
+        ]
+        for field in expected_fields:
+            self.assertIn(field, data, f"Missing required response field: {field}")
+
+    def test_16_imputation_handles_explicit_demographic_and_geographic_inputs(self):
+        """Verify that explicit inputs for uncollected features are accepted and processed when provided."""
+        payload = {
+            "transactionId": "TXN-EXPLICIT-COORDS-01",
+            "amount": 75.0,
+            "channel": "Card",
+            "merchantCategory": "Entertainment",
+            "gender": "F",
+            "lat": 40.7128,
+            "long": -74.0060,
+            "city_pop": 8000000,
+            "merch_lat": 40.7130,
+            "merch_long": -74.0065,
+        }
+        res = self.client.post("/api/predict", json=payload)
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+
+        self.assertEqual(data["transactionId"], "TXN-EXPLICIT-COORDS-01")
+        self.assertTrue(math.isfinite(data["fraud_probability"]))
+        self.assertTrue(math.isfinite(data["confidence"]))
+
+    def test_17_pipeline_fitted_imputer_statistics(self):
+        """Verify the pipeline's actual SimpleImputer statistics match dataset learned medians and modes."""
+        self.assertIsNotNone(model, "Model pipeline should be loaded")
+        preprocessor = model.named_steps["preprocessor"]
+
+        # 1. Numerical imputer verification
+        num_imputer = preprocessor.named_transformers_["numerical"].named_steps["imputer"]
+        stats = num_imputer.statistics_
+        # Expected features: ['amt', 'lat', 'long', 'city_pop', 'merch_lat', 'merch_long', 'transaction_hour', 'transaction_day', 'transaction_month']
+        self.assertAlmostEqual(float(stats[1]), 39.3543, places=3)   # lat
+        self.assertAlmostEqual(float(stats[2]), -87.4769, places=3)  # long
+        self.assertEqual(float(stats[3]), 2456.0)                   # city_pop
+        self.assertAlmostEqual(float(stats[4]), 39.3705, places=3)   # merch_lat
+        self.assertAlmostEqual(float(stats[5]), -87.4411, places=3)  # merch_long
+
+        # 2. Categorical imputer verification
+        cat_imputer = preprocessor.named_transformers_["categorical"].named_steps["imputer"]
+        cat_stats = cat_imputer.statistics_
+        # Expected features: ['category', 'gender']
+        self.assertEqual(str(cat_stats[1]), "F")                    # gender mode
+
+        # 3. Transform verification with np.nan
+        sample_df = pd.DataFrame([{
+            "category": "grocery_pos",
+            "gender": np.nan,
+            "amt": 50.0,
+            "lat": np.nan,
+            "long": np.nan,
+            "city_pop": np.nan,
+            "merch_lat": np.nan,
+            "merch_long": np.nan,
+            "transaction_hour": 14,
+            "transaction_day": 15,
+            "transaction_month": 6,
+        }])
+        transformed = preprocessor.transform(sample_df)
+        self.assertEqual(transformed.shape, (1, 25))
+        self.assertTrue(np.all(np.isfinite(transformed if isinstance(transformed, np.ndarray) else transformed.toarray())))
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import joblib
+import numpy as np
 import pandas as pd
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -286,32 +287,43 @@ def predict():
     else:
         tx_dt = analysis_now
 
-    # 7. Documented defensible defaults for model features not in frontend form
-    # The dataset requires demographic and location features.
-    # We use documented neutral/median values rather than fabricating user identity:
-    gender = str(data.get("gender") or "F").strip().upper()
-    if gender not in ("F", "M"):
-        gender = "F"
+    # 7. Uncollected model features (demographic & geographic)
+    # The saved pipeline was fitted on 11 features including demographic and geographic fields.
+    # Rather than injecting hardcoded magic numbers, pass np.nan for uncollected features
+    # so the pipeline's fitted SimpleImputer applies its learned training statistics.
+    raw_gender = data.get("gender")
+    if raw_gender is not None and str(raw_gender).strip().upper() in ("F", "M"):
+        gender = str(raw_gender).strip().upper()
+    else:
+        gender = np.nan
 
-    try:
-        lat = float(data.get("lat", 38.5))
-        long = float(data.get("long", -90.2))
-        city_pop = float(data.get("city_pop", 50000.0))
-        merch_lat = float(data.get("merch_lat", lat))
-        merch_long = float(data.get("merch_long", long))
-    except (ValueError, TypeError):
-        lat, long, city_pop, merch_lat, merch_long = 38.5, -90.2, 50000.0, 38.5, -90.2
+    def parse_optional_float(val: Any) -> float:
+        if val is None or val == "":
+            return np.nan
+        try:
+            parsed = float(val)
+            if math.isnan(parsed) or math.isinf(parsed):
+                return np.nan
+            return parsed
+        except (ValueError, TypeError):
+            return np.nan
+
+    lat = parse_optional_float(data.get("lat"))
+    long = parse_optional_float(data.get("long"))
+    city_pop = parse_optional_float(data.get("city_pop"))
+    merch_lat = parse_optional_float(data.get("merch_lat"))
+    merch_long = parse_optional_float(data.get("merch_long"))
 
     # 8. Construct input DataFrame matching exact training feature schema
     feature_dict = {
         "category": str(model_category),
-        "gender": str(gender),
+        "gender": gender,
         "amt": float(amount),
-        "lat": float(lat),
-        "long": float(long),
-        "city_pop": float(city_pop),
-        "merch_lat": float(merch_lat),
-        "merch_long": float(merch_long),
+        "lat": lat,
+        "long": long,
+        "city_pop": city_pop,
+        "merch_lat": merch_lat,
+        "merch_long": merch_long,
         "transaction_hour": int(tx_dt.hour),
         "transaction_day": int(tx_dt.day),
         "transaction_month": int(tx_dt.month),
