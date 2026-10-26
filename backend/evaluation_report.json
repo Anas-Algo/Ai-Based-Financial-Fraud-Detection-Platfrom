@@ -1,0 +1,124 @@
+{
+  "evaluation_timestamp": "2026-10-26T16:05:31.962650+05:30",
+  "model_metadata": {
+    "model_path": "model/fraud_detection_pipeline.pkl",
+    "pipeline_type": "Pipeline",
+    "classifier": "RandomForestClassifier",
+    "n_estimators": 100,
+    "class_weight": "balanced_subsample",
+    "random_state": 42,
+    "classes": [
+      0,
+      1
+    ],
+    "total_preprocessed_features": 25
+  },
+  "dataset_metadata": {
+    "source_file": "dataset/fraudTrain.csv",
+    "evaluation_split_method": "fraudTrain.csv (held-out 20% test partition withheld from pipeline.fit() using train_test_split test_size=0.20, random_state=42, stratify=y)",
+    "using_separate_test_file": false,
+    "total_dataset_rows": 1296675,
+    "evaluation_samples": 259335,
+    "fraud_samples": 1501,
+    "legitimate_samples": 257834,
+    "fraud_prevalence_pct": 0.5788
+  },
+  "feature_schema": {
+    "raw_input_features": [
+      "category",
+      "gender",
+      "amt",
+      "lat",
+      "long",
+      "city_pop",
+      "merch_lat",
+      "merch_long",
+      "transaction_hour",
+      "transaction_day",
+      "transaction_month"
+    ],
+    "categorical_features": [
+      "category",
+      "gender"
+    ],
+    "numerical_features": [
+      "amt",
+      "lat",
+      "long",
+      "city_pop",
+      "merch_lat",
+      "merch_long",
+      "transaction_hour",
+      "transaction_day",
+      "transaction_month"
+    ],
+    "inference_form_inputs": [
+      "amount",
+      "channel",
+      "merchantCategory",
+      "country"
+    ],
+    "features_defaulted_at_inference": [
+      "gender (default: F)",
+      "lat / long (default: 38.5, -90.2)",
+      "city_pop (default: 50,000)",
+      "merch_lat / merch_long (default: 38.5, -90.2)"
+    ]
+  },
+  "evaluation_metrics": {
+    "decision_threshold": 0.5,
+    "precision": 0.9377,
+    "recall": 0.7315,
+    "f1_score": 0.8219,
+    "average_precision_pr_auc": 0.8888,
+    "roc_auc": 0.9907,
+    "accuracy": 0.9982,
+    "confusion_matrix": {
+      "true_positives": 1098,
+      "false_positives": 73,
+      "false_negatives": 403,
+      "true_negatives": 257761
+    }
+  },
+  "threshold_analysis": [
+    {
+      "threshold": 0.3,
+      "description": "Medium Risk Threshold (Flags suspicious transactions for verification)",
+      "precision": 0.8713,
+      "recall": 0.7935,
+      "f1_score": 0.8305,
+      "true_positives": 1191,
+      "false_positives": 176,
+      "false_negatives": 310,
+      "true_negatives": 257658
+    },
+    {
+      "threshold": 0.5,
+      "description": "Standard Decision Boundary (Default binary classification cutoff)",
+      "precision": 0.9323,
+      "recall": 0.7342,
+      "f1_score": 0.8215,
+      "true_positives": 1102,
+      "false_positives": 80,
+      "false_negatives": 399,
+      "true_negatives": 257754
+    },
+    {
+      "threshold": 0.7,
+      "description": "High Risk Threshold (Conservative cutoff minimizing false alarms)",
+      "precision": 0.9701,
+      "recall": 0.6476,
+      "f1_score": 0.7767,
+      "true_positives": 972,
+      "false_positives": 30,
+      "false_negatives": 529,
+      "true_negatives": 257804
+    }
+  ],
+  "methodology_disclosures": {
+    "class_imbalance": "Severe positive class imbalance (0.579% fraud). Accuracy alone (99.8%) is deceptive because a trivial majority-class predictor achieves 99.42% accuracy. Precision (93.2%), Recall (73.4%), and PR-AUC (88.9%) are the primary reliability benchmarks.",
+    "temporal_split_limitation": "The held-out evaluation set was partitioned using stratified random sampling (test_size=0.20, random_state=42), matching train_model.py. Transactions from future dates exist in both partitions. An out-of-time (OOT) evaluation on subsequent dates is recommended for strict temporal validation.",
+    "account_grouping_limitation": "Card numbers (cc_num) were withheld from training features but not grouped during splitting. Transactions from the same synthetic customer appear in both train and test partitions.",
+    "inference_gap": "The web UI collects transaction amount, channel, and merchant category. Location coordinates and demographic features are held at static median defaults during real-time scoring."
+  }
+}
