@@ -23,6 +23,7 @@ import {
   Database,
   Loader2,
   Sparkles,
+  RefreshCw,
 } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -81,51 +82,100 @@ function Dashboard() {
   const [showDemoFallback, setShowDemoFallback] = useState(false);
 
   const apiConfigured = isApiConfigured();
-  const { data: health, isError: healthError } = useQuery(healthQueryOptions());
+  const {
+    data: health,
+    isError: healthError,
+    refetch: refetchHealth,
+  } = useQuery(healthQueryOptions());
   const {
     data: stats,
     isLoading: statsLoading,
     isError: statsError,
+    isFetching: statsFetching,
+    refetch: refetchStats,
   } = useQuery(statsQueryOptions());
-  const { data: txData, isLoading: txLoading } = useQuery(transactionsQueryOptions(8));
-  const { data: analytics, isLoading: anLoading } = useQuery(analyticsQueryOptions());
+  const {
+    data: txData,
+    isLoading: txLoading,
+    isError: txError,
+    isFetching: txFetching,
+    refetch: refetchTx,
+  } = useQuery(transactionsQueryOptions(8));
+  const {
+    data: analytics,
+    isLoading: anLoading,
+    isError: anError,
+    isFetching: anFetching,
+    refetch: refetchAnalytics,
+  } = useQuery(analyticsQueryOptions());
+
+  const isFetching = statsFetching || txFetching || anFetching;
+  const isBackendError = Boolean(healthError || statsError);
+  const handleRefresh = () => {
+    refetchHealth();
+    refetchStats();
+    refetchTx();
+    refetchAnalytics();
+  };
 
   const hasLiveTransactions = Boolean(stats && stats.totalTransactions > 0);
-  const useLive = apiConfigured && !statsError && (hasLiveTransactions || !showDemoFallback);
+  const useLive = apiConfigured && !isBackendError && (hasLiveTransactions || !showDemoFallback);
 
-  const total = useLive ? (stats?.totalTransactions ?? 0) : demoTotals.total;
-  const legitimate = useLive ? (stats?.legitimateTransactions ?? 0) : demoTotals.legitimate;
-  const flagged = useLive ? (stats?.fraudulentTransactions ?? 0) : demoTotals.flagged;
-  const fraudRate = useLive ? (stats?.fraudRate ?? 0) : demoFraudRate;
+  const total = useLive
+    ? (stats?.totalTransactions ?? 0)
+    : showDemoFallback || !apiConfigured
+      ? demoTotals.total
+      : 0;
+  const legitimate = useLive
+    ? (stats?.legitimateTransactions ?? 0)
+    : showDemoFallback || !apiConfigured
+      ? demoTotals.legitimate
+      : 0;
+  const flagged = useLive
+    ? (stats?.fraudulentTransactions ?? 0)
+    : showDemoFallback || !apiConfigured
+      ? demoTotals.flagged
+      : 0;
+  const fraudRate = useLive
+    ? (stats?.fraudRate ?? 0)
+    : showDemoFallback || !apiConfigured
+      ? demoFraudRate
+      : 0;
+
+  const kpiNote = (liveNote: string) => {
+    if (isBackendError && !showDemoFallback) return "Backend unreachable";
+    if (useLive) return liveNote;
+    return "Synthetic sample";
+  };
 
   const summary = [
     {
       label: "Total Transactions",
-      value: total.toString(),
+      value: isBackendError && !showDemoFallback ? "—" : total.toString(),
       icon: Activity,
       tone: "text-primary",
-      note: useLive ? "Live database" : "Synthetic sample",
+      note: kpiNote("Live database"),
     },
     {
       label: "Legitimate Transactions",
-      value: legitimate.toString(),
+      value: isBackendError && !showDemoFallback ? "—" : legitimate.toString(),
       icon: ShieldCheck,
       tone: "text-emerald-600",
-      note: useLive ? "Model predicted legitimate" : "Synthetic sample",
+      note: kpiNote("Model predicted legitimate"),
     },
     {
       label: "Fraudulent Transactions",
-      value: flagged.toString(),
+      value: isBackendError && !showDemoFallback ? "—" : flagged.toString(),
       icon: AlertTriangle,
       tone: "text-destructive",
-      note: useLive ? "Model flagged fraud" : "Synthetic sample",
+      note: kpiNote("Model flagged fraud"),
     },
     {
       label: "Fraud Rate",
-      value: `${fraudRate}%`,
+      value: isBackendError && !showDemoFallback ? "—" : `${fraudRate}%`,
       icon: Percent,
       tone: "text-destructive",
-      note: useLive ? "Current audit percentage" : "Synthetic sample",
+      note: kpiNote("Current audit percentage"),
     },
   ];
 
@@ -155,14 +205,16 @@ function Dashboard() {
           label: t.label,
           riskLevel: t.riskLevel,
         }))
-      : recentDemo.map((t) => ({
-          id: t.id,
-          amount: t.amount,
-          timestamp: t.timestamp,
-          channel: t.channel,
-          label: t.label,
-          riskLevel: t.label === "Flagged (sample)" ? "High" : "Low",
-        }));
+      : showDemoFallback || !apiConfigured
+        ? recentDemo.map((t) => ({
+            id: t.id,
+            amount: t.amount,
+            timestamp: t.timestamp,
+            channel: t.channel,
+            label: t.label,
+            riskLevel: t.label === "Flagged (sample)" ? "High" : "Low",
+          }))
+        : [];
 
   // Distribution chart data
   const distributionData = useLive
@@ -173,13 +225,18 @@ function Dashboard() {
           { name: "Legitimate", value: legitimate },
           { name: "Fraudulent", value: flagged },
         ]
-    : demoDistribution;
+    : showDemoFallback || !apiConfigured
+      ? demoDistribution
+      : [
+          { name: "Legitimate", value: 0 },
+          { name: "Fraudulent", value: 0 },
+        ];
 
   // Trend chart data
   const trendData =
     useLive && analytics?.transactionTrend && analytics.transactionTrend.length > 0
       ? analytics.transactionTrend
-      : showDemoFallback
+      : showDemoFallback || !apiConfigured
         ? demoTrend
         : [];
 
@@ -207,16 +264,43 @@ function Dashboard() {
                   : "Backend Connected"}
             </Badge>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={isFetching}
+            className="h-8 text-xs"
+          >
+            <RefreshCw className={`size-3.5 mr-1 ${isFetching ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
         </div>
       </PageHeader>
 
       {/* Connection & Mode Banner */}
       {!apiConfigured ? (
         <DemoBanner text="ML Backend is not configured. Displaying synthetic demonstration data." />
-      ) : healthError && statsError ? (
-        <div className="rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          Could not connect to Flask API on <code className="font-mono">http://127.0.0.1:5000</code>
-          . Please start the backend service.
+      ) : isBackendError ? (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="size-4 shrink-0" />
+            <span>
+              Could not connect to Flask API on{" "}
+              <code className="font-mono">http://127.0.0.1:5000</code>. Please check that the
+              backend service is running.
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefresh}
+              className="h-8 text-xs border-destructive/30 hover:bg-destructive/20"
+            >
+              <RefreshCw className="size-3 mr-1" />
+              Retry Connection
+            </Button>
+          </div>
         </div>
       ) : hasLiveTransactions ? (
         <div className="flex items-center justify-between rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-200">
@@ -387,7 +471,11 @@ function Dashboard() {
             <p className="text-xs text-muted-foreground mt-1">
               {useLive && hasLiveTransactions
                 ? "Latest transactions evaluated by the machine learning pipeline."
-                : "Synthetic transactions for preview."}
+                : showDemoFallback || !apiConfigured
+                  ? "Synthetic transactions for preview."
+                  : isBackendError
+                    ? "Live audit records could not be loaded from the backend."
+                    : "No transactions recorded yet."}
             </p>
           </div>
           <Button variant="ghost" size="sm" asChild className="text-xs">
@@ -401,6 +489,17 @@ function Dashboard() {
             <div className="flex flex-col items-center justify-center gap-2 py-10 text-muted-foreground">
               <Loader2 className="size-6 animate-spin text-primary" />
               <p className="text-xs">Loading recent transactions…</p>
+            </div>
+          ) : (txError || isBackendError) && !showDemoFallback ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-10 text-center text-muted-foreground">
+              <AlertTriangle className="size-8 text-destructive opacity-80" />
+              <p className="text-sm font-medium text-destructive">
+                Unable to load recent transactions from the Flask backend.
+              </p>
+              <Button variant="outline" size="sm" onClick={() => refetchTx()} className="text-xs">
+                <RefreshCw className="size-3 mr-1" />
+                Retry
+              </Button>
             </div>
           ) : useLive && !hasLiveTransactions && !showDemoFallback ? (
             <div className="flex flex-col items-center justify-center gap-3 py-10 text-center text-muted-foreground">
@@ -418,7 +517,7 @@ function Dashboard() {
                 <TableRow>
                   <TableHead>Transaction ID</TableHead>
                   <TableHead>Amount</TableHead>
-                  <TableHead>Transaction Time</TableHead>
+                  <TableHead>Transaction / Analysis Time</TableHead>
                   <TableHead>Channel</TableHead>
                   <TableHead>Prediction</TableHead>
                   <TableHead>Risk Level</TableHead>
@@ -430,22 +529,35 @@ function Dashboard() {
                     <TableCell className="font-mono text-xs">{t.id}</TableCell>
                     <TableCell>{formatAmount(t.amount)}</TableCell>
                     <TableCell className="text-xs">
-                      <div
-                        className={
-                          t.hasTransactionTime ? "font-medium text-foreground" : "text-foreground"
-                        }
-                      >
-                        {formatTimestamp(t.timestamp)}
-                      </div>
-                      {t.hasTransactionTime && t.createdAt ? (
-                        <div className="text-[10px] text-muted-foreground">
-                          Analyzed: {formatTimestamp(t.createdAt)}
+                      {t.hasTransactionTime ? (
+                        <div className="space-y-0.5">
+                          <div>
+                            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                              Transaction Time
+                            </span>
+                            <span className="font-medium text-foreground">
+                              {formatTimestamp(t.timestamp)}
+                            </span>
+                          </div>
+                          {t.createdAt ? (
+                            <div>
+                              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                                Analyzed At
+                              </span>
+                              <span className="text-muted-foreground">
+                                {formatTimestamp(t.createdAt)}
+                              </span>
+                            </div>
+                          ) : null}
                         </div>
-                      ) : t.createdAt ? (
-                        <div className="text-[10px] text-muted-foreground/75 italic">
-                          Recorded at analysis
+                      ) : (
+                        <div className="space-y-0.5">
+                          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                            Recorded / Analysis Time
+                          </span>
+                          <span className="text-foreground">{formatTimestamp(t.timestamp)}</span>
                         </div>
-                      ) : null}
+                      )}
                     </TableCell>
                     <TableCell>{t.channel}</TableCell>
                     <TableCell>
@@ -461,12 +573,21 @@ function Dashboard() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <span className="text-xs capitalize font-medium">
+                      <Badge
+                        variant="outline"
+                        className={
+                          t.riskLevel === "High"
+                            ? "border-destructive/30 bg-destructive/10 text-destructive font-medium"
+                            : t.riskLevel === "Medium"
+                              ? "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium"
+                              : "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 font-medium"
+                        }
+                      >
                         {t.riskLevel ||
                           (t.label.includes("Fraud") || t.label.includes("Flagged")
                             ? "High"
                             : "Low")}
-                      </span>
+                      </Badge>
                     </TableCell>
                   </TableRow>
                 ))}
