@@ -104,11 +104,13 @@ AI-BASED FINANCIAL FRAUD DETECTION/
 │   │   └── fraud_detection_pipeline.pkl # Pre-trained Scikit-learn Pipeline
 │   ├── app.py                         # Flask REST API server & inference endpoints
 │   ├── database.py                    # SQLite initialization, schema, queries & IST handling
+│   ├── explanation.py                 # Deterministic decision-path feature attribution engine
 │   ├── train_model.py                 # Pipeline training, validation & serialization script
 │   ├── evaluate_model.py              # Comparative offline evaluation script (dual benchmarks)
 │   ├── evaluate_group_generalization.py # Isolated research evaluator for unseen-cardholder generalization
+│   ├── evaluate_chronological_generalization.py # Isolated research evaluator for chronological out-of-time evaluation
 │   ├── evaluation_report.json         # Serialized metrics, confusion matrices & disclosures
-│   ├── test_api.py                    # 19-test automated API and benchmark test suite
+│   ├── test_api.py                    # 26-test automated API, benchmark and attribution test suite
 │   ├── transactions.db               # SQLite audit database (auto-generated at runtime)
 │   └── requirements.txt               # Backend Python dependencies
 ├── frontend/
@@ -185,7 +187,7 @@ Open **Terminal 1** (PowerShell or Command Prompt):
    ```powershell
    python -m unittest test_api.py -v
    ```
-   *(All 19 tests should pass with `OK`).*
+   *(All 26 tests should pass with `OK`).*
 
 6. Start the Flask API server:
    ```powershell
@@ -253,6 +255,7 @@ Open **Terminal 2** (keep Terminal 1 running):
 | Run Backend Unit Tests | `backend/` | `python -m unittest test_api.py -v` |
 | Run Production Model Evaluation Benchmark | `backend/` | `python evaluate_model.py` |
 | Run Unseen-Cardholder Generalization Benchmark | `backend/` | `python evaluate_group_generalization.py` |
+| Run Chronological Out-of-Time Generalization Benchmark | `backend/` | `python evaluate_chronological_generalization.py` |
 | Train / Retrain ML Model | `backend/` | `python train_model.py` |
 | Install Frontend Dependencies | `frontend/lovable_project/` | `npm install` |
 | Run Frontend Dev Server | `frontend/lovable_project/` | `npm run dev` |
@@ -311,6 +314,51 @@ Open **Terminal 2** (keep Terminal 1 running):
     "country": "India",
     "createdAt": "2026-10-26T15:25:50.013599+05:30",
     "created_at": "2026-10-26T15:25:50.013599+05:30",
+    "explanations": {
+      "attribution_method": "Decision Tree Path Decomposition (Saabas)",
+      "target_class": "Fraudulent",
+      "base_probability": 0.5,
+      "predicted_probability": 0.02,
+      "imputed_context_contribution": -0.0415,
+      "effective_baseline_probability": 0.4585,
+      "threshold": 0.01,
+      "factors": [
+        {
+          "feature": "Amount",
+          "value": 2500.0,
+          "contribution": -0.3125,
+          "impact_percentage": "-31.25%",
+          "direction": "decreases_risk",
+          "description": "Transaction amount ($2500.00) contributed -31.3% to model fraud probability relative to baseline."
+        },
+        {
+          "feature": "Transaction Hour",
+          "value": 15,
+          "contribution": -0.1145,
+          "impact_percentage": "-11.45%",
+          "direction": "decreases_risk",
+          "description": "Transaction hour (15:00) contributed -11.5% to model fraud probability relative to baseline."
+        },
+        {
+          "feature": "Merchant Category",
+          "value": "grocery_pos",
+          "contribution": -0.0115,
+          "impact_percentage": "-1.15%",
+          "direction": "decreases_risk",
+          "description": "Merchant category 'grocery_pos' contributed -1.2% to model fraud probability relative to baseline."
+        }
+      ],
+      "imputed_features_isolated": [
+        "city_pop",
+        "gender",
+        "lat",
+        "long",
+        "merch_lat",
+        "merch_long"
+      ],
+      "reconstruction_error": 0.0,
+      "disclaimer": "Model attributions quantify how individual feature values shifted the Random Forest prediction relative to the ensemble training prior. They reflect associative patterns within the fitted decision trees, not external causal evidence or bank verification."
+    },
     "fraudProbability": 0.02,
     "fraud_probability": 0.02,
     "hasTransactionTime": false,
@@ -332,6 +380,19 @@ Open **Terminal 2** (keep Terminal 1 running):
     "transaction_time": null
   }
   ```
+
+- **Explanation Payload Field Specification**:
+  - `attribution_method`: Identifier for the tree-path traversal algorithm (`Decision Tree Path Decomposition (Saabas)`).
+  - `target_class`: The classification outcome being explained (`Fraudulent`).
+  - `base_probability`: The ensemble's prior fraud probability across tree root nodes before evaluating features ($\bar{P}_{\text{base}} = 0.5000$).
+  - `predicted_probability`: Continuous fraud probability evaluated by the ensemble ($P_{\text{fraud}}$).
+  - `imputed_context_contribution`: Sum of decision-path shifts produced by uncollected demographic & geographic features held at static training medians/modes ($C_{\text{imputed}}$).
+  - `effective_baseline_probability`: Combined baseline probability prior to active inputs ($\bar{P}_{\text{effective}} = \bar{P}_{\text{base}} + C_{\text{imputed}}$).
+  - `threshold`: Absolute probability filter for active factor reporting ($0.01$, or $\pm 1.0\%$).
+  - `factors`: Array of active factors meeting the threshold, detailing `feature`, `value`, `contribution`, `impact_percentage`, `direction` (`increases_risk` or `decreases_risk`), and `description`.
+  - `imputed_features_isolated`: Explicit list of uncollected background features whose contributions are isolated into `imputed_context_contribution`.
+  - `reconstruction_error`: Numerical additivity check verifying $\lvert \bar{P}_{\text{pred}} - (\bar{P}_{\text{base}} + \sum C_f) \rvert < 10^{-7}$.
+  - `disclaimer`: Explicit statement that attributions describe internal tree decision paths, not real-world causal proof or bank verification.
 
 ---
 
@@ -441,6 +502,39 @@ The model outputs raw class probabilities via `predict_proba`. Fraud probability
 | $0.0\% \le P_{\text{fraud}} < 30.0\%$ | **Low** | Emerald Green | Auto-approve transaction |
 | $30.0\% \le P_{\text{fraud}} < 70.0\%$ | **Medium** | Amber Yellow | Flag for secondary verification / OTP |
 | $70.0\% \le P_{\text{fraud}} \le 100.0\%$ | **High** | Destructive Red | Immediate block & alert security analyst |
+
+### Per-Transaction Prediction Explanations & Model Transparency
+
+FraudLens implements an exact, native decision-path attribution engine ([`backend/explanation.py`](backend/explanation.py)) based on the Saabas tree-path decomposition algorithm. It explains why an individual transaction received its fraud probability score without external heavy dependencies (e.g. `shap` or `lime`):
+
+1. **Tree-Path Decomposition (Saabas Algorithm)**:
+   For every decision tree $m$ in the 100-tree forest, a transaction traverses a path from root $n_0$ to leaf $n_k$. At each split node $n_j$, the difference in node fraud probability $\Delta P = P^{(m)}(n_{j+1}) - P^{(m)}(n_j)$ is attributed directly to the splitting feature $f = \text{feature}[n_j]$.
+   By telescoping sum along the path:
+   $$P^{(m)}(\text{leaf}) - P^{(m)}(\text{root}) = \sum_{j=0}^{k-1} \left[ P^{(m)}(n_{j+1}) - P^{(m)}(n_j) \right] = \sum_f C_f^{(m)}$$
+   Averaging across all $M = 100$ trees in the ensemble:
+   $$\bar{P}(\text{fraud} \mid x) = \bar{P}_{\text{base}} + \sum_{f} C_f(x)$$
+   This decomposition guarantees exact mathematical equivalence to `model.predict_proba` down to floating-point precision ($< 10^{-12}$). A runtime guard verifies $\lvert \bar{P}_{\text{pred}} - (\bar{P}_{\text{base}} + \sum C_f) \rvert < 10^{-7}$.
+
+2. **Baseline Prior vs. Effective Baseline**:
+   - **Ensemble Prior Baseline ($\bar{P}_{\text{base}}$)**: The unconditioned prior probability at the root of the trees. Because `class_weight='balanced_subsample'` balances class weights at fit time, $\bar{P}_{\text{base}} \equiv 0.5000$ (50.0%) across all 100 trees.
+   - **Imputed Context Contribution ($C_{\text{imputed}}$)**: Six features (`gender`, `lat`, `long`, `city_pop`, `merch_lat`, `merch_long`) are not gathered in the UI and are imputed with training medians/modes. Because these are static background defaults and not user-submitted values, their tree-path contributions are isolated into $C_{\text{imputed}}$.
+   - **Effective Baseline ($\bar{P}_{\text{effective}}$)**: Represents the starting point for active user inputs:
+     $$\bar{P}_{\text{effective}} = \bar{P}_{\text{base}} + C_{\text{imputed}}$$
+
+3. **Categorical Feature Aggregation**:
+   The preprocessing pipeline one-hot encodes `category` into 14 dummy columns (`categorical__category_*`). The explanation engine sums the contributions of all 14 indicator variables into a single coherent **`Merchant Category`** attribution, preventing fragmented dummy columns (e.g., "not grocery_pos") from leaking into the UI.
+
+4. **Active Factor Thresholding**:
+   Only active user inputs with an absolute contribution $|C_f| \ge 0.01$ (1.0 percentage point) are reported as active factors. Sub-threshold contributions below 1% are omitted to reduce interface clutter while remaining accounted for in the exact mathematical reconciliation:
+   $$\bar{P}(\text{fraud}) = \bar{P}_{\text{effective}} + \sum_{f \in A_{\text{displayed}}} C_f + \sum_{f \in A_{\text{omitted}}} C_f$$
+
+5. **Analyze UI Input Transparency & Attribution Display**:
+   - **Input Roles**: In [`frontend/lovable_project/src/routes/analyze.tsx`](frontend/lovable_project/src/routes/analyze.tsx), form fields are clearly distinguished:
+     - **Active Model Inputs** (`amt`, `category`, and server-clock derived temporal features).
+     - **Contextual Audit Metadata** (`channel`, `country`, `transactionId`), with an explicit notice that they are recorded in SQLite and do not alter model predictions.
+   - **Model Feature Attributions**: The result card renders the prior baseline, imputed-context shift, and effective baseline, alongside active driver cards showing direction badges (`TrendingUp` for Increases Risk, `TrendingDown` for Decreases Risk) and human-readable descriptions.
+   - **Strict Non-Causal Disclaimer**:
+     > *"Model attributions quantify how individual feature values shifted the Random Forest prediction relative to the ensemble training prior. They reflect associative patterns within the fitted decision trees, not external causal evidence or bank verification."*
 
 ---
 
@@ -567,24 +661,36 @@ CREATE INDEX IF NOT EXISTS idx_tx_fraud ON transactions (is_fraud);
 
 The project includes continuous verification suites:
 
-- **Backend Test Suite (`test_api.py`)**: 19 automated test cases covering:
-  - API health status and model availability
-  - Input validation (missing body, empty amount, negative values, non-numeric strings)
-  - Normalization of legitimate and fraudulent inference payloads
-  - Pagination and sorting of transaction history
-  - Zero-division safety in statistical calculations
-  - Complete chart aggregation contract tests for analytics
-  - Strict preservation of ISO 8601 timestamps and IST timezone fallbacks
-  - Missing feature imputation handling via `SimpleImputer` learned statistics
-  - Explicit coordinate and demographic pass-through verification
+- **Backend Test Suite (`test_api.py`)**: 26 automated test cases covering:
+  - API health status and model availability (test 1)
+  - Input validation: missing body, empty amount, negative values, non-numeric strings (tests 2–5)
+  - Normalization of legitimate and fraudulent inference payloads (tests 6–7)
+  - Pagination and sorting of transaction history (test 8)
+  - Zero-division safety in statistical calculations (test 9)
+  - Complete chart aggregation contract tests for analytics (test 10)
+  - Strict preservation of ISO 8601 timestamps and IST timezone fallbacks (tests 11–14)
+  - Missing feature imputation handling via `SimpleImputer` learned statistics (tests 15–16)
+  - Fitted pipeline SimpleImputer learned statistics verification (test 17)
   - Programmatic verification of the production model dual-benchmark evaluation consistency (test 18)
   - Programmatic verification of the unseen-cardholder benchmark report, disjoint account splitting, and group confusion matrix consistency (test 19)
+  - Programmatic verification of the chronological out-of-time benchmark report, temporal ordering, and cutoff separation (test 20)
+  - Decision-path probability reconstruction and additivity within $10^{-7}$ across diverse transactions (test 21)
+  - Bit-for-bit explanation determinism across repeated runs (test 22)
+  - Strict isolation of imputed uncollected features from user risk factors (test 23)
+  - Merchant-category one-hot dummy aggregation into a single factor (test 24)
+  - API response backward compatibility with the `explanations` payload (test 25)
+  - Explanation engine edge cases, extreme amounts ($0.01 and $100M), and invalid input validation (test 26)
 - **Offline Model Evaluator (`evaluate_model.py`)**:
   - Reproducible offline benchmark script measuring both full-feature and UI-imputed performance on the production model's random held-out partition ($N = 259,335$).
   - Exports serialized metrics, confusion matrices, and risk threshold analyses to `backend/evaluation_report.json`.
 - **Unseen-Cardholder Generalization Evaluator (`evaluate_group_generalization.py`)**:
   - Reproducible group-held-out research evaluator executing `StratifiedGroupKFold` partitioning and dual benchmarking across 197 unseen accounts ($N = 259,242$).
   - Appends structured benchmark results under `unseen_cardholder_benchmark` in `backend/evaluation_report.json` without modifying production artifacts.
+- **Chronological Out-of-Time Generalization Evaluator (`evaluate_chronological_generalization.py`)**:
+  - Reproducible temporal research evaluator sorting transactions chronologically and splitting strictly at `2020-03-06 07:16:43` to benchmark out-of-time generalization ($N = 259,335$).
+  - Appends structured benchmark results under `chronological_out_of_time_benchmark` in `backend/evaluation_report.json` without modifying production artifacts.
+- **Decision-Path Explanation Engine (`explanation.py`)**:
+  - Native, zero-dependency per-transaction feature attribution module implementing tree-path decomposition (Saabas algorithm) with mathematical additivity guarantees.
 - **Frontend Code Quality**:
   - `npm run lint`: ESLint with TypeScript rules (0 errors)
   - `npm run build`: Production bundle compilation (Client, SSR, and Nitro server workers)
@@ -598,3 +704,5 @@ The project includes continuous verification suites:
 2. **Feature Imputation**: Demographic and geographic features not gathered in the UI use the fitted pipeline's learned training medians and modes (`SimpleImputer`), which serves as a privacy-preserving baseline.
 3. **Model Retraining**: In a production enterprise setting, models are retrained periodically on streaming event queues (e.g., Kafka / Flink). FraudLens relies on the pre-trained offline pipeline for inference.
 4. **Demonstration Mode**: If the Flask backend service is offline, the frontend provides an optional synthetic demonstration mode to allow visual exploration of UI widgets without crashing.
+5. **Non-Causal Explanation Nature**: Per-transaction feature attributions quantify how feature values shifted the Random Forest prediction along decision tree paths relative to the training prior. They represent associative model decisions within the learned trees, not causal proof or bank-verified fraud evidence.
+6. **Payment Rail Metadata**: Digital channel selections (UPI, Card, Wallet, Transfer, ATM) are recorded as audit metadata and do not imply that the model evaluates live payment network protocols or banking clearing rules.
