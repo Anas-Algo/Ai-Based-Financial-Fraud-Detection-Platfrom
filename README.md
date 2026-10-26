@@ -106,8 +106,9 @@ AI-BASED FINANCIAL FRAUD DETECTION/
 │   ├── database.py                    # SQLite initialization, schema, queries & IST handling
 │   ├── train_model.py                 # Pipeline training, validation & serialization script
 │   ├── evaluate_model.py              # Comparative offline evaluation script (dual benchmarks)
+│   ├── evaluate_group_generalization.py # Isolated research evaluator for unseen-cardholder generalization
 │   ├── evaluation_report.json         # Serialized metrics, confusion matrices & disclosures
-│   ├── test_api.py                    # 18-test automated API and benchmark test suite
+│   ├── test_api.py                    # 19-test automated API and benchmark test suite
 │   ├── transactions.db               # SQLite audit database (auto-generated at runtime)
 │   └── requirements.txt               # Backend Python dependencies
 ├── frontend/
@@ -184,7 +185,7 @@ Open **Terminal 1** (PowerShell or Command Prompt):
    ```powershell
    python -m unittest test_api.py -v
    ```
-   *(All 18 tests should pass with `OK`).*
+   *(All 19 tests should pass with `OK`).*
 
 6. Start the Flask API server:
    ```powershell
@@ -250,13 +251,17 @@ Open **Terminal 2** (keep Terminal 1 running):
 |---|---|---|
 | Run Backend API | `backend/` | `python app.py` |
 | Run Backend Unit Tests | `backend/` | `python -m unittest test_api.py -v` |
-| Run Model Evaluation Benchmark | `backend/` | `python evaluate_model.py` |
+| Run Production Model Evaluation Benchmark | `backend/` | `python evaluate_model.py` |
+| Run Unseen-Cardholder Generalization Benchmark | `backend/` | `python evaluate_group_generalization.py` |
 | Train / Retrain ML Model | `backend/` | `python train_model.py` |
 | Install Frontend Dependencies | `frontend/lovable_project/` | `npm install` |
 | Run Frontend Dev Server | `frontend/lovable_project/` | `npm run dev` |
 | Run Frontend ESLint | `frontend/lovable_project/` | `npm run lint` |
 | Run Frontend Production Build | `frontend/lovable_project/` | `npm run build` |
 | Preview Production Build | `frontend/lovable_project/` | `npm run preview` |
+
+> [!NOTE]
+> `python evaluate_group_generalization.py` trains an isolated research pipeline in memory using `StratifiedGroupKFold` on credit card numbers (`cc_num`) to benchmark zero-shot generalization across 197 completely unseen cardholders. Fitting on ~1M transactions takes approximately 60–90 seconds and requires additional memory. It is strictly an offline research benchmark and **does not** retrain, overwrite, or replace the live production model (`fraud_detection_pipeline.pkl`).
 
 ---
 
@@ -441,14 +446,24 @@ The model outputs raw class probabilities via `predict_proba`. Fraud probability
 
 ## 9. Model Evaluation and Limitations
 
-FraudLens implements an offline model evaluation suite ([`backend/evaluate_model.py`](backend/evaluate_model.py)) that measures the performance of the saved Scikit-learn Random Forest pipeline ([`backend/model/fraud_detection_pipeline.pkl`](backend/model/fraud_detection_pipeline.pkl)) against held-out test data without retraining.
+FraudLens implements offline model evaluation suites that measure fraud detection performance across both the production model and isolated research benchmarks.
 
-To maintain academic rigor and transparency, the platform benchmarks the model under two distinct configurations evaluated on the **exact same 259,335-row held-out partition** (containing 1,501 fraud cases and 257,834 legitimate cases, with a fraud prevalence of 0.5788%):
+To maintain academic rigor and transparency, the platform establishes two separate evaluation frameworks:
+1. **Production Model Benchmark (Random Held-Out Split)**: Evaluates the pre-trained saved pipeline ([`backend/model/fraud_detection_pipeline.pkl`](backend/model/fraud_detection_pipeline.pkl)) against held-out test data from the original training split without retraining.
+2. **Unseen-Cardholder Generalization Benchmark (Stratified Group-Held-Out Split)**: Evaluates an isolated research pipeline trained on disjoint cardholders to benchmark generalization across previously unseen accounts.
 
-1. **Full-Feature Benchmark (Idealized Baseline)**: Evaluates the model when all 11 original dataset features (including true demographic coordinates and city population) are available.
-2. **UI-Imputed Benchmark (Realistic Live Inference)**: Evaluates the exact same held-out rows after replacing the six features not collected in the Analyze form (`gender`, `lat`, `long`, `city_pop`, `merch_lat`, `merch_long`) with `numpy.nan`, exactly simulating live inference in [`backend/app.py`](backend/app.py) where the pipeline's fitted `SimpleImputer` steps supply learned training medians and modes.
+> [!IMPORTANT]
+> The random-split and group-held-out benchmarks measure different operational conditions and are **not directly interchangeable**:
+> - The **random-split benchmark** measures detection accuracy when transactions come from known cardholders whose historical profiles exist in the training set.
+> - The **group-held-out benchmark** measures zero-shot generalization when transactions originate from completely novel cardholders with zero prior history in training.
 
-### Comparative Benchmark Results
+---
+
+### A. Production Model Benchmark (Random Held-Out Split, N = 259,335)
+
+Evaluated via [`backend/evaluate_model.py`](backend/evaluate_model.py) on the exact same 259,335-row held-out partition of `fraudTrain.csv` (1,501 fraud cases, 257,834 legitimate cases, 0.5788% fraud prevalence):
+- **Full-Feature Benchmark (Idealized Baseline)**: Evaluates the model when all 11 original dataset features (including demographic coordinates and population) are available.
+- **UI-Imputed Benchmark (Realistic Live Inference)**: Evaluates the exact same held-out rows after replacing the six features not collected in the Analyze form (`gender`, `lat`, `long`, `city_pop`, `merch_lat`, `merch_long`) with `numpy.nan`, exactly matching live inference in [`backend/app.py`](backend/app.py) where fitted `SimpleImputer` steps supply learned medians and modes.
 
 | Metric | Full-feature benchmark | UI-imputed benchmark |
 |---|---:|---:|
@@ -465,17 +480,48 @@ To maintain academic rigor and transparency, the platform benchmarks the model u
 
 *Decision threshold: 0.50. Evaluated on the 20% stratified held-out test split of `fraudTrain.csv` ($N = 259,335$). Report serialized at [`backend/evaluation_report.json`](backend/evaluation_report.json).*
 
+---
+
+### B. Unseen-Cardholder Generalization Benchmark (Stratified Group Split, N = 259,242)
+
+Evaluated via [`backend/evaluate_group_generalization.py`](backend/evaluate_group_generalization.py) to assess how effectively the Random Forest architecture generalizes to accounts that the model has never encountered before.
+
+**Methodology & Isolation:**
+- **Partitioning Strategy**: Partitioned with `StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=42)` grouped by card number (`cc_num`). Selected **Fold 1** allocates **786 cardholders** ($1,037,433$ rows) to training and holds out **197 cardholders** ($259,242$ rows: $1,501$ fraud, $257,741$ legitimate, $0.5790\%$ fraud prevalence) with **zero cardholder overlap** ($\text{overlap} = 0$).
+- **Research Pipeline Isolation**: Trains a fresh research pipeline strictly in memory with the identical architecture (`ColumnTransformer` + `RandomForestClassifier(n_estimators=100, class_weight='balanced_subsample')`). It **does not** retrain, modify, or replace the live production model (`fraud_detection_pipeline.pkl`).
+- **Feature Configurations**: Evaluated both with all 11 features and under UI-imputed conditions where the six uncollected features (`gender`, `lat`, `long`, `city_pop`, `merch_lat`, `merch_long`) are masked with `numpy.nan`.
+
+| Metric | Unseen-cardholder full-feature | Unseen-cardholder UI-imputed |
+|---|---:|---:|
+| Precision | 92.85% | 89.96% |
+| Recall | 68.35% | 71.02% |
+| F1-score | 0.7874 | 0.7937 |
+| Accuracy | 99.79% | 99.79% |
+| PR-AUC / Average Precision | 0.8552 | 0.8386 |
+| ROC-AUC | 0.9793 | 0.9786 |
+| True positives | 1,026 | 1,066 |
+| False positives | 79 | 119 |
+| False negatives | 475 | 435 |
+| True negatives | 257,662 | 257,622 |
+
+*Decision threshold: 0.50. Evaluated on Fold 1 held-out cardholders of `fraudTrain.csv` ($N = 259,242$, 197 disjoint cardholders). Report serialized under `unseen_cardholder_benchmark` in [`backend/evaluation_report.json`](backend/evaluation_report.json).*
+
+---
+
 ### Key Evaluation Findings
-- **Feature Gap Impact**: Omitting uncollected demographic and geographic inputs causes precision to decrease by **5.86%** ($93.77\% \to 87.91\%$) and false alarms to double ($73 \to 146$), while recall experiences a modest reduction of **2.40%** ($73.15\% \to 70.75\%$).
-- **Dominant Predictive Features**: The classifier maintains solid discriminative ability ($F_1 = 0.7841$, $\text{PR-AUC} = 0.8395$) under UI imputation because transaction amount (`amt`, 59.0% feature importance), merchant category (`category`, 13.9% importance), and transaction hour (`transaction_hour`, 15.8% importance) represent over 88% of the model's total feature weight.
+
+1. **Feature Imputation Robustness**: Under UI inference conditions where geographic coordinates and demographics are missing, both benchmarks demonstrate high resilience. The classifier preserves solid discriminative ability ($F_1 = 0.7841$ on familiar cardholders; $F_1 = 0.7937$ on unseen cardholders) because transaction amount (`amt`, 59.0% feature weight), merchant category (`category`, 13.9% weight), and hour of day (`transaction_hour`, 15.8% weight) govern over 88% of total model decisions.
+2. **Account Generalization Capability**: When transitioning from familiar cardholders to completely unseen cardholders under UI inference, PR-AUC drops marginally from **0.8395** to **0.8386** ($-0.0009$), precision remains strong at **89.96%**, and recall reaches **71.02%**, proving that the model learns generic fraudulent spending behaviors rather than overfitting to specific cardholder identities.
+
+---
 
 ### Critical Methodology Limitations
-1. **Synthetic/Offline Dataset**: The dataset is synthetic/offline, not verified real bank or UPI traffic. These results represent an offline benchmark rather than live operational performance.
-2. **Stratified Random vs. Chronological Split**: The split is stratified and random, not chronological. Transactions from the same date ranges appear across both train and test partitions.
-3. **Cardholder Account Overlap**: All 969 unique test-set cardholders also occur in the training set (credit card numbers `cc_num` were withheld from features but not grouped during partitioning).
-4. **Generalization Uncertainty**: Performance on unseen customers and future transactions remains unverified.
-5. **Simulation vs. Live Guarantee**: The UI-imputed benchmark is a simulation of the current input behavior, not a live production accuracy guarantee.
-6. **Metadata Fields**: `channel` and `country` are metadata and are not active model features in the underlying credit card Random Forest classifier.
+
+1. **Synthetic/Offline Dataset**: All evaluations are conducted on offline synthetic transaction datasets (`fraudTrain.csv`), not verified live production bank, credit card, or UPI clearing networks.
+2. **Random vs. Group Partitioning**: In the production model's random test split, all 969 unique cardholders appear in both train and test partitions. In contrast, the group-held-out research evaluation guarantees zero cardholder overlap (197 disjoint cardholders).
+3. **Generalization Horizons**: While customer generalization to unseen cardholders has been empirically confirmed, **chronological out-of-time (OOT) generalization** on future transaction dates remains unbenchmarked.
+4. **Simulation vs. Live Guarantee**: The UI-imputed benchmarks simulate the exact missing-value conditions of the web Analyze form via `numpy.nan` imputation, but do not guarantee live operational efficacy under changing fraud dynamics.
+5. **Metadata Fields**: Digital channel (`channel`) and `country` are contextual audit metadata and are not active inputs in the underlying card-based Random Forest classifier.
 
 ---
 
@@ -521,7 +567,7 @@ CREATE INDEX IF NOT EXISTS idx_tx_fraud ON transactions (is_fraud);
 
 The project includes continuous verification suites:
 
-- **Backend Test Suite (`test_api.py`)**: 18 automated test cases covering:
+- **Backend Test Suite (`test_api.py`)**: 19 automated test cases covering:
   - API health status and model availability
   - Input validation (missing body, empty amount, negative values, non-numeric strings)
   - Normalization of legitimate and fraudulent inference payloads
@@ -531,10 +577,14 @@ The project includes continuous verification suites:
   - Strict preservation of ISO 8601 timestamps and IST timezone fallbacks
   - Missing feature imputation handling via `SimpleImputer` learned statistics
   - Explicit coordinate and demographic pass-through verification
-  - Programmatic verification of the dual-benchmark evaluation report consistency
+  - Programmatic verification of the production model dual-benchmark evaluation consistency (test 18)
+  - Programmatic verification of the unseen-cardholder benchmark report, disjoint account splitting, and group confusion matrix consistency (test 19)
 - **Offline Model Evaluator (`evaluate_model.py`)**:
-  - Reproducible offline benchmark script measuring both full-feature and UI-imputed performance
-  - Exports serialized metrics, confusion matrices, and risk threshold analyses to `backend/evaluation_report.json`
+  - Reproducible offline benchmark script measuring both full-feature and UI-imputed performance on the production model's random held-out partition ($N = 259,335$).
+  - Exports serialized metrics, confusion matrices, and risk threshold analyses to `backend/evaluation_report.json`.
+- **Unseen-Cardholder Generalization Evaluator (`evaluate_group_generalization.py`)**:
+  - Reproducible group-held-out research evaluator executing `StratifiedGroupKFold` partitioning and dual benchmarking across 197 unseen accounts ($N = 259,242$).
+  - Appends structured benchmark results under `unseen_cardholder_benchmark` in `backend/evaluation_report.json` without modifying production artifacts.
 - **Frontend Code Quality**:
   - `npm run lint`: ESLint with TypeScript rules (0 errors)
   - `npm run build`: Production bundle compilation (Client, SSR, and Nitro server workers)
