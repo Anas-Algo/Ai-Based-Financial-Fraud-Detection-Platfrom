@@ -540,5 +540,219 @@
       "unseen_cardholder_isolation": "Card numbers (cc_num) were used as grouping identifiers in StratifiedGroupKFold. All 197 cardholders in the test partition were completely withheld from training (0 overlapping accounts). This measures the model's true capability to generalize to new, previously unseen cardholders.",
       "masked_inference_features": "Under UI inference, six features ('gender', 'lat', 'long', 'city_pop', 'merch_lat', 'merch_long') are not collected from the user. In backend/app.py, they are passed as numpy.nan to the pipeline's fitted SimpleImputer, which fills them with population training medians and modes. This benchmark quantifies the empirical impact of this imputation on held-out unseen cardholders."
     }
+  },
+  "chronological_out_of_time_benchmark": {
+    "evaluation_timestamp": "2026-10-27T01:09:50.381356+05:30",
+    "split_strategy": {
+      "method": "Chronological Holdout (Out-of-Time)",
+      "cutoff_timestamp": "2020-03-06 07:16:43",
+      "training_start_timestamp": "2019-01-01 00:00:18",
+      "training_end_timestamp": "2020-03-06 07:15:17",
+      "evaluation_start_timestamp": "2020-03-06 07:16:43",
+      "evaluation_end_timestamp": "2020-06-21 12:13:37",
+      "total_dataset_rows": 1296675,
+      "train_samples": 1037340,
+      "train_fraud_samples": 5968,
+      "train_legitimate_samples": 1031372,
+      "train_fraud_prevalence_pct": 0.5753,
+      "test_samples": 259335,
+      "test_fraud_samples": 1538,
+      "test_legitimate_samples": 257797,
+      "test_fraud_prevalence_pct": 0.5931,
+      "train_unique_cardholders": 964,
+      "test_unique_cardholders": 927,
+      "cardholder_overlap_count": 908,
+      "cardholder_overlap_pct_of_test": 97.95,
+      "cardholder_overlap_disclosure": "Descriptive statistic illustrating ongoing customer spending over time. This benchmark tests temporal stability and drift, not zero-shot cardholder generalization."
+    },
+    "model_metadata": {
+      "pipeline_type": "Pipeline",
+      "classifier": "RandomForestClassifier",
+      "n_estimators": 100,
+      "class_weight": "balanced_subsample",
+      "random_state": 42,
+      "training_split": "Transactions strictly prior to 2020-03-06 07:16:43",
+      "is_production_model": false,
+      "production_model_preserved": true,
+      "preprocessing_fitted_on_train_only": true,
+      "training_duration_sec": 73.94
+    },
+    "full_feature_evaluation": {
+      "inference_duration_sec": 0.8,
+      "decision_threshold": 0.5,
+      "precision": 0.9325,
+      "recall": 0.7003,
+      "f1_score": 0.7999,
+      "accuracy": 0.9979,
+      "average_precision_pr_auc": 0.8683,
+      "roc_auc": 0.9815,
+      "confusion_matrix": {
+        "true_positives": 1077,
+        "false_positives": 78,
+        "false_negatives": 461,
+        "true_negatives": 257719
+      },
+      "threshold_analysis": [
+        {
+          "threshold": 0.3,
+          "description": "Medium Risk Threshold (Flags suspicious transactions for verification)",
+          "precision": 0.8446,
+          "recall": 0.7809,
+          "f1_score": 0.8115,
+          "true_positives": 1201,
+          "false_positives": 221,
+          "false_negatives": 337,
+          "true_negatives": 257576
+        },
+        {
+          "threshold": 0.5,
+          "description": "Standard Decision Boundary (Default binary classification cutoff)",
+          "precision": 0.9313,
+          "recall": 0.7055,
+          "f1_score": 0.8028,
+          "true_positives": 1085,
+          "false_positives": 80,
+          "false_negatives": 453,
+          "true_negatives": 257717
+        },
+        {
+          "threshold": 0.7,
+          "description": "High Risk Threshold (Conservative cutoff minimizing false alarms)",
+          "precision": 0.9793,
+          "recall": 0.5832,
+          "f1_score": 0.7311,
+          "true_positives": 897,
+          "false_positives": 19,
+          "false_negatives": 641,
+          "true_negatives": 257778
+        }
+      ]
+    },
+    "ui_imputed_evaluation": {
+      "description": "Simulation of UI inference conditions on future transactions (uncollected features masked with np.nan and imputed by pipeline)",
+      "masked_features": [
+        "gender",
+        "lat",
+        "long",
+        "city_pop",
+        "merch_lat",
+        "merch_long"
+      ],
+      "inference_duration_sec": 0.82,
+      "decision_threshold": 0.5,
+      "precision": 0.8758,
+      "recall": 0.7107,
+      "f1_score": 0.7846,
+      "accuracy": 0.9977,
+      "average_precision_pr_auc": 0.8492,
+      "roc_auc": 0.9849,
+      "confusion_matrix": {
+        "true_positives": 1093,
+        "false_positives": 155,
+        "false_negatives": 445,
+        "true_negatives": 257642
+      },
+      "threshold_analysis": [
+        {
+          "threshold": 0.3,
+          "description": "Medium Risk Threshold (Flags suspicious transactions for verification)",
+          "precision": 0.7604,
+          "recall": 0.7945,
+          "f1_score": 0.7771,
+          "true_positives": 1222,
+          "false_positives": 385,
+          "false_negatives": 316,
+          "true_negatives": 257412
+        },
+        {
+          "threshold": 0.5,
+          "description": "Standard Decision Boundary (Default binary classification cutoff)",
+          "precision": 0.872,
+          "recall": 0.7133,
+          "f1_score": 0.7847,
+          "true_positives": 1097,
+          "false_positives": 161,
+          "false_negatives": 441,
+          "true_negatives": 257636
+        },
+        {
+          "threshold": 0.7,
+          "description": "High Risk Threshold (Conservative cutoff minimizing false alarms)",
+          "precision": 0.9376,
+          "recall": 0.6248,
+          "f1_score": 0.7499,
+          "true_positives": 961,
+          "false_positives": 64,
+          "false_negatives": 577,
+          "true_negatives": 257733
+        }
+      ]
+    },
+    "comparative_summary": {
+      "evaluated_samples": 259335,
+      "fraud_samples": 1538,
+      "legitimate_samples": 257797,
+      "fraud_prevalence_pct": 0.5931,
+      "metrics_comparison": {
+        "precision": {
+          "full_features": 0.9325,
+          "ui_imputed": 0.8758,
+          "delta": -0.0567
+        },
+        "recall": {
+          "full_features": 0.7003,
+          "ui_imputed": 0.7107,
+          "delta": 0.0104
+        },
+        "f1_score": {
+          "full_features": 0.7999,
+          "ui_imputed": 0.7846,
+          "delta": -0.0153
+        },
+        "accuracy": {
+          "full_features": 0.9979,
+          "ui_imputed": 0.9977,
+          "delta": -0.0002
+        },
+        "average_precision_pr_auc": {
+          "full_features": 0.8683,
+          "ui_imputed": 0.8492,
+          "delta": -0.0191
+        },
+        "roc_auc": {
+          "full_features": 0.9815,
+          "ui_imputed": 0.9849,
+          "delta": 0.0034
+        }
+      },
+      "confusion_matrix_comparison": {
+        "true_positives": {
+          "full_features": 1077,
+          "ui_imputed": 1093,
+          "delta": 16
+        },
+        "false_positives": {
+          "full_features": 78,
+          "ui_imputed": 155,
+          "delta": 77
+        },
+        "false_negatives": {
+          "full_features": 461,
+          "ui_imputed": 445,
+          "delta": -16
+        },
+        "true_negatives": {
+          "full_features": 257719,
+          "ui_imputed": 257642,
+          "delta": -77
+        }
+      }
+    },
+    "methodology_disclosures": {
+      "offline_simulation_disclosure": "IMPORTANT: These are offline research benchmark evaluations on synthetic transaction dataset partitions, not verified performance metrics on real-world bank, credit card, or UPI transactions. The UI-imputed evaluation simulates the exact feature availability of the live web application by masking uncollected inputs with numpy.nan, but does not prove live production efficacy.",
+      "chronological_out_of_time_separation": "All training transactions strictly precede 2020-03-06 07:16:43; all evaluation transactions occur at or after this cutoff. Feature engineering, imputers, and encoders were fitted exclusively on the training partition without looking ahead.",
+      "cardholder_overlap_distinction": "Unlike the group-held-out benchmark (which isolates accounts with 0 overlap), this chronological benchmark naturally includes repeated cardholders across time (908 overlapping cardholders, 97.95% of test accounts), evaluating temporal robustness, behavioral drift, and seasonality rather than zero-shot account generalization.",
+      "masked_inference_features": "Under UI inference, six features ('gender', 'lat', 'long', 'city_pop', 'merch_lat', 'merch_long') are not collected from the user. In backend/app.py, they are passed as numpy.nan to the pipeline's fitted SimpleImputer, which fills them with population training medians and modes. This benchmark quantifies the empirical impact of this imputation on chronologically future transactions."
+    }
   }
 }

@@ -532,6 +532,107 @@ class FraudLensApiTestCase(unittest.TestCase):
         self.assertIn("unseen_cardholder_isolation", disclosures)
         self.assertIn("masked_inference_features", disclosures)
 
+    def test_20_chronological_benchmark_verification(self):
+        """Verify that evaluation_report.json contains isolated chronological out-of-time benchmark with strict temporal separation and mathematical consistency."""
+        report_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "evaluation_report.json")
+        self.assertTrue(os.path.exists(report_path), f"Report not found at {report_path}")
+
+        with open(report_path, "r", encoding="utf-8") as f:
+            report = json.load(f)
+
+        # 1. Verify all previous benchmark sections remain present
+        self.assertIn("full_feature_evaluation", report)
+        self.assertIn("ui_imputed_evaluation", report)
+        self.assertIn("comparative_summary", report)
+        self.assertIn("unseen_cardholder_benchmark", report)
+        self.assertIn("chronological_out_of_time_benchmark", report, "chronological_out_of_time_benchmark missing from report")
+
+        oot_bench = report["chronological_out_of_time_benchmark"]
+
+        # 2. Verify split strategy and temporal separation
+        self.assertIn("split_strategy", oot_bench)
+        split = oot_bench["split_strategy"]
+        self.assertEqual(split["method"], "Chronological Holdout (Out-of-Time)")
+        self.assertEqual(split["cutoff_timestamp"], "2020-03-06 07:16:43")
+
+        # Timestamp boundaries check
+        cutoff_dt = pd.to_datetime(split["cutoff_timestamp"])
+        train_end_dt = pd.to_datetime(split["training_end_timestamp"])
+        test_start_dt = pd.to_datetime(split["evaluation_start_timestamp"])
+        self.assertLess(train_end_dt, cutoff_dt, "Training data contains transactions on/after cutoff")
+        self.assertGreaterEqual(test_start_dt, cutoff_dt, "Evaluation data contains transactions before cutoff")
+
+        # Sample and fraud counts
+        train_samples = split["train_samples"]
+        train_fraud = split["train_fraud_samples"]
+        train_legit = split["train_legitimate_samples"]
+        test_samples = split["test_samples"]
+        test_fraud = split["test_fraud_samples"]
+        test_legit = split["test_legitimate_samples"]
+
+        self.assertEqual(train_samples, 1037340)
+        self.assertEqual(train_fraud, 5968)
+        self.assertEqual(train_legit, 1031372)
+        self.assertEqual(train_samples, train_fraud + train_legit)
+
+        self.assertEqual(test_samples, 259335)
+        self.assertEqual(test_fraud, 1538)
+        self.assertEqual(test_legit, 257797)
+        self.assertEqual(test_samples, test_fraud + test_legit)
+
+        self.assertEqual(train_samples + test_samples, 1296675)
+        self.assertEqual(train_fraud + test_fraud, 7506)
+
+        # 3. Verify model metadata shows production model protection and train-only preprocessing
+        model_meta = oot_bench["model_metadata"]
+        self.assertFalse(model_meta["is_production_model"])
+        self.assertTrue(model_meta["production_model_preserved"])
+        self.assertTrue(model_meta["preprocessing_fitted_on_train_only"])
+
+        # 4. Verify mathematical consistency for both chronological configurations
+        for config_name in ["full_feature_evaluation", "ui_imputed_evaluation"]:
+            self.assertIn(config_name, oot_bench)
+            sec = oot_bench[config_name]
+            cm = sec["confusion_matrix"]
+            tp = cm["true_positives"]
+            fp = cm["false_positives"]
+            fn = cm["false_negatives"]
+            tn = cm["true_negatives"]
+
+            # Balance checks
+            self.assertEqual(tp + fp + fn + tn, test_samples, f"{config_name}: CM sum != test_samples")
+            self.assertEqual(tp + fn, test_fraud, f"{config_name}: TP + FN != test_fraud")
+            self.assertEqual(tn + fp, test_legit, f"{config_name}: TN + FP != test_legit")
+
+            # Derived metrics checks
+            calc_prec = tp / (tp + fp)
+            calc_rec = tp / (tp + fn)
+            calc_f1 = (2 * calc_prec * calc_rec) / (calc_prec + calc_rec)
+            calc_acc = (tp + tn) / test_samples
+
+            self.assertAlmostEqual(sec["precision"], calc_prec, places=3, msg=f"{config_name} precision mismatch")
+            self.assertAlmostEqual(sec["recall"], calc_rec, places=3, msg=f"{config_name} recall mismatch")
+            self.assertAlmostEqual(sec["f1_score"], calc_f1, places=3, msg=f"{config_name} F1 mismatch")
+            self.assertAlmostEqual(sec["accuracy"], calc_acc, places=3, msg=f"{config_name} accuracy mismatch")
+
+            # Probabilistic metrics
+            self.assertTrue(0.0 <= sec["average_precision_pr_auc"] <= 1.0)
+            self.assertTrue(0.0 <= sec["roc_auc"] <= 1.0)
+
+        # 5. Verify comparative summary
+        comp = oot_bench["comparative_summary"]
+        self.assertEqual(comp["evaluated_samples"], test_samples)
+        f_prec = oot_bench["full_feature_evaluation"]["precision"]
+        i_prec = oot_bench["ui_imputed_evaluation"]["precision"]
+        self.assertAlmostEqual(comp["metrics_comparison"]["precision"]["delta"], round(i_prec - f_prec, 4), places=4)
+
+        # 6. Verify disclosures
+        disclosures = oot_bench["methodology_disclosures"]
+        self.assertIn("offline_simulation_disclosure", disclosures)
+        self.assertIn("chronological_out_of_time_separation", disclosures)
+        self.assertIn("cardholder_overlap_distinction", disclosures)
+        self.assertIn("masked_inference_features", disclosures)
+
 
 if __name__ == "__main__":
     unittest.main()
