@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   AlertOctagon,
   CheckCircle2,
+  Clock,
   Info,
   Loader2,
   PlugZap,
@@ -149,7 +150,18 @@ function AnalyzePage() {
     setLoading(false);
 
     if (response.status === "ok") {
-      toast.success(`Transaction evaluated as ${response.prediction.label}`);
+      const isFraud = response.prediction.label === "Fraudulent";
+      const probPct =
+        response.prediction.fraudProbability != null
+          ? `${(response.prediction.fraudProbability * 100).toFixed(1)}%`
+          : "N/A";
+      const desc = `Risk Level: ${response.prediction.riskLevel} (${probPct} fraud probability)`;
+
+      if (isFraud) {
+        toast.warning("Evaluation complete: Flagged as Fraudulent", { description: desc });
+      } else {
+        toast.success("Evaluation complete: Classified as Legitimate", { description: desc });
+      }
       // Refresh Dashboard, History, and Analytics data
       queryClient.invalidateQueries({ queryKey: apiKeys.all });
     } else if (response.status === "error") {
@@ -193,87 +205,162 @@ function AnalyzePage() {
             </Button>
           </CardHeader>
           <CardContent>
-            <form onSubmit={onSubmit} noValidate className="grid gap-4 sm:grid-cols-2">
-              <Field
-                id="transactionId"
-                label="Transaction ID"
-                value={form.transactionId}
-                onChange={set("transactionId")}
-                error={errors.transactionId}
-                placeholder="TXN-100245"
-              />
-              <Field
-                id="amount"
-                label="Amount (INR)"
-                type="number"
-                value={form.amount}
-                onChange={set("amount")}
-                error={errors.amount}
-                placeholder="2500"
-              />
-              <div className="grid gap-2">
-                <Label htmlFor="channel">Channel</Label>
-                <select
-                  id="channel"
-                  value={form.channel}
-                  onChange={(e) => set("channel")(e.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {channels.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="merchantCategory">Merchant Category</Label>
-                <select
-                  id="merchantCategory"
-                  value={form.merchantCategory}
-                  onChange={(e) => set("merchantCategory")(e.target.value)}
-                  aria-invalid={Boolean(errors.merchantCategory)}
-                  aria-describedby={errors.merchantCategory ? "merchantCategory-error" : undefined}
-                  className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <option value="">Select a category</option>
-                  {merchantCategories.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-                {errors.merchantCategory ? (
-                  <p id="merchantCategory-error" className="text-xs text-destructive">
-                    {errors.merchantCategory}
-                  </p>
-                ) : null}
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="country">Country</Label>
-                <select
-                  id="country"
-                  value={form.country}
-                  onChange={(e) => set("country")(e.target.value)}
-                  aria-invalid={Boolean(errors.country)}
-                  aria-describedby={errors.country ? "country-error" : undefined}
-                  className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <option value="">Select a country</option>
-                  {countries.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-                {errors.country ? (
-                  <p id="country-error" className="text-xs text-destructive">
-                    {errors.country}
-                  </p>
-                ) : null}
+            <form onSubmit={onSubmit} noValidate className="space-y-4">
+              {/* Group 1: Model Inputs */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between pb-1">
+                  <div>
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground">
+                      Active Model Inputs
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground">
+                      Directly evaluated by the Random Forest classifier
+                    </p>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className="border-primary/40 bg-primary/10 text-[10px] text-primary"
+                  >
+                    ML Pipeline Features
+                  </Badge>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field
+                    id="amount"
+                    label="Amount (INR)"
+                    type="number"
+                    value={form.amount}
+                    onChange={set("amount")}
+                    error={errors.amount}
+                    placeholder="2500"
+                  />
+                  <div className="grid gap-2">
+                    <Label htmlFor="merchantCategory">Merchant Category</Label>
+                    <select
+                      id="merchantCategory"
+                      value={form.merchantCategory}
+                      onChange={(e) => set("merchantCategory")(e.target.value)}
+                      aria-invalid={Boolean(errors.merchantCategory)}
+                      aria-describedby={
+                        errors.merchantCategory ? "merchantCategory-error" : undefined
+                      }
+                      className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <option value="">Select a category</option>
+                      {merchantCategories.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                    {errors.merchantCategory ? (
+                      <p id="merchantCategory-error" className="text-xs text-destructive">
+                        {errors.merchantCategory}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="flex items-start gap-2.5 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-foreground/85 leading-relaxed sm:col-span-2">
+                    <Clock className="size-4 shrink-0 mt-0.5 text-primary" aria-hidden />
+                    <div>
+                      <span className="font-semibold text-foreground">Analysis Time Features:</span>{" "}
+                      Temporal model inputs (hour of day, day of month, calendar month) are derived
+                      automatically from the server clock in India Standard Time (IST) at the moment
+                      of evaluation. Uncollected demographic and geographic inputs use the
+                      pipeline&apos;s learned median/mode imputers.
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div className="flex flex-wrap gap-3 sm:col-span-2 pt-2">
+              <div className="border-t border-border/70 my-2" />
+
+              {/* Group 2: Contextual Audit Metadata */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between pb-1">
+                  <div>
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Contextual Audit Metadata
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground">
+                      Persisted for audit logging; not evaluated by the model
+                    </p>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className="border-muted text-[10px] text-muted-foreground"
+                  >
+                    Audit Log Only
+                  </Badge>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field
+                    id="transactionId"
+                    label="Transaction ID"
+                    value={form.transactionId}
+                    onChange={set("transactionId")}
+                    error={errors.transactionId}
+                    placeholder="TXN-100245"
+                  />
+                  <div className="grid gap-2">
+                    <Label htmlFor="channel">Payment Channel</Label>
+                    <select
+                      id="channel"
+                      value={form.channel}
+                      onChange={(e) => set("channel")(e.target.value)}
+                      className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {channels.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid gap-2 sm:col-span-2">
+                    <Label htmlFor="country">Country</Label>
+                    <select
+                      id="country"
+                      value={form.country}
+                      onChange={(e) => set("country")(e.target.value)}
+                      aria-invalid={Boolean(errors.country)}
+                      aria-describedby={errors.country ? "country-error" : undefined}
+                      className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <option value="">Select a country</option>
+                      {countries.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                    {errors.country ? (
+                      <p id="country-error" className="text-xs text-destructive">
+                        {errors.country}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground leading-relaxed sm:col-span-2">
+                    <Info className="size-4 shrink-0 mt-0.5 text-muted-foreground" aria-hidden />
+                    <div>
+                      <span className="font-semibold text-foreground/90">
+                        Payment Rail & Dataset Notice:
+                      </span>{" "}
+                      The underlying model was trained on a credit-card transaction dataset. The
+                      interface&apos;s channel selection (UPI, Card, Wallet, Transfer, ATM) and
+                      country are stored in the SQLite audit log for compliance, but{" "}
+                      <em>do not affect</em> the model&apos;s prediction score or risk probability.
+                      Selecting UPI or Wallet does not mean the model specifically evaluates those
+                      payment networks.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-3 pt-2">
                 <Button type="submit" disabled={loading} className="min-w-28">
                   {loading ? (
                     <>
@@ -402,6 +489,13 @@ function AnalyzePage() {
                     </>
                   ) : null}
                 </dl>
+
+                <div className="rounded-lg border border-border/60 bg-muted/30 p-2.5 text-[11px] text-muted-foreground leading-relaxed">
+                  <span className="font-semibold text-foreground/85">Evaluation basis:</span>{" "}
+                  Classification is computed from amount, merchant category, and analysis time.
+                  Channel ({result.prediction.channel || "UPI"}) and Country (
+                  {result.prediction.country || "India"}) are recorded as contextual audit metadata.
+                </div>
               </div>
             ) : result?.status === "error" ? (
               <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-destructive">
