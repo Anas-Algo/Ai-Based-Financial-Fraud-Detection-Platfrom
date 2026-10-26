@@ -191,7 +191,7 @@ function HistoryPage() {
                     <TableHead>Amount</TableHead>
                     <TableHead>Channel</TableHead>
                     <TableHead>Category</TableHead>
-                    <TableHead>Transaction Time</TableHead>
+                    <TableHead>Transaction / Analysis Time</TableHead>
                     <TableHead>Model Prediction</TableHead>
                     <TableHead>Fraud Probability</TableHead>
                     <TableHead>Risk Level</TableHead>
@@ -207,20 +207,33 @@ function HistoryPage() {
                       <TableCell className="text-xs">{t.channel}</TableCell>
                       <TableCell className="text-xs capitalize">{t.merchantCategory}</TableCell>
                       <TableCell className="text-xs">
-                        <div
-                          className={
-                            t.hasTransactionTime ? "font-medium text-foreground" : "text-foreground"
-                          }
-                        >
-                          {formatTimestamp(t.timestamp)}
-                        </div>
-                        {t.hasTransactionTime && t.createdAt ? (
-                          <div className="text-[10px] text-muted-foreground">
-                            Analyzed: {formatTimestamp(t.createdAt)}
+                        {t.hasTransactionTime ? (
+                          <div className="space-y-0.5">
+                            <div>
+                              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                                Transaction Time
+                              </span>
+                              <span className="font-medium text-foreground">
+                                {formatTimestamp(t.timestamp)}
+                              </span>
+                            </div>
+                            {t.createdAt ? (
+                              <div>
+                                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                                  Analyzed At
+                                </span>
+                                <span className="text-muted-foreground">
+                                  {formatTimestamp(t.createdAt)}
+                                </span>
+                              </div>
+                            ) : null}
                           </div>
                         ) : (
-                          <div className="text-[10px] text-muted-foreground/75 italic">
-                            Recorded at analysis
+                          <div className="space-y-0.5">
+                            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                              Recorded / Analysis Time
+                            </span>
+                            <span className="text-foreground">{formatTimestamp(t.timestamp)}</span>
                           </div>
                         )}
                       </TableCell>
