@@ -387,6 +387,73 @@ class FraudLensApiTestCase(unittest.TestCase):
         self.assertEqual(transformed.shape, (1, 25))
         self.assertTrue(np.all(np.isfinite(transformed if isinstance(transformed, np.ndarray) else transformed.toarray())))
 
+    def test_18_evaluation_report_dual_benchmark_verification(self):
+        """Verify that evaluation_report.json contains both full-feature and UI-imputed benchmarks with mathematical consistency."""
+        report_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "evaluation_report.json")
+        self.assertTrue(os.path.exists(report_path), f"Report not found at {report_path}")
+
+        with open(report_path, "r", encoding="utf-8") as f:
+            report = json.load(f)
+
+        # Check top-level sections
+        self.assertIn("full_feature_evaluation", report)
+        self.assertIn("ui_imputed_evaluation", report)
+        self.assertIn("comparative_summary", report)
+        self.assertIn("dataset_metadata", report)
+        self.assertIn("methodology_disclosures", report)
+
+        dataset_meta = report["dataset_metadata"]
+        total_eval = dataset_meta["evaluation_samples"]
+        fraud_eval = dataset_meta["fraud_samples"]
+        legit_eval = dataset_meta["legitimate_samples"]
+
+        self.assertEqual(total_eval, 259335)
+        self.assertEqual(fraud_eval, 1501)
+        self.assertEqual(legit_eval, 257834)
+        self.assertEqual(total_eval, fraud_eval + legit_eval)
+
+        # Verify mathematical consistency for both benchmark configurations
+        for config_name in ["full_feature_evaluation", "ui_imputed_evaluation"]:
+            sec = report[config_name]
+            cm = sec["confusion_matrix"]
+            tp = cm["true_positives"]
+            fp = cm["false_positives"]
+            fn = cm["false_negatives"]
+            tn = cm["true_negatives"]
+
+            # 1. Total counts must balance
+            self.assertEqual(tp + fp + fn + tn, total_eval, f"{config_name}: CM sum != total_eval")
+            self.assertEqual(tp + fn, fraud_eval, f"{config_name}: TP + FN != fraud_eval")
+            self.assertEqual(tn + fp, legit_eval, f"{config_name}: TN + FP != legit_eval")
+
+            # 2. Derived metrics check
+            calc_prec = tp / (tp + fp)
+            calc_rec = tp / (tp + fn)
+            calc_f1 = (2 * calc_prec * calc_rec) / (calc_prec + calc_rec)
+            calc_acc = (tp + tn) / total_eval
+
+            self.assertAlmostEqual(sec["precision"], calc_prec, places=3, msg=f"{config_name} precision mismatch")
+            self.assertAlmostEqual(sec["recall"], calc_rec, places=3, msg=f"{config_name} recall mismatch")
+            self.assertAlmostEqual(sec["f1_score"], calc_f1, places=3, msg=f"{config_name} F1 mismatch")
+            self.assertAlmostEqual(sec["accuracy"], calc_acc, places=3, msg=f"{config_name} accuracy mismatch")
+
+            # 3. AUC metrics are valid probabilities
+            self.assertTrue(0.0 <= sec["average_precision_pr_auc"] <= 1.0)
+            self.assertTrue(0.0 <= sec["roc_auc"] <= 1.0)
+
+        # Verify comparative delta
+        comp = report["comparative_summary"]
+        self.assertEqual(comp["evaluated_samples"], total_eval)
+        f_prec = report["full_feature_evaluation"]["precision"]
+        i_prec = report["ui_imputed_evaluation"]["precision"]
+        self.assertAlmostEqual(comp["metrics_comparison"]["precision"]["delta"], round(i_prec - f_prec, 4), places=4)
+
+        # Verify required disclosures are present
+        disclosures = report["methodology_disclosures"]
+        self.assertIn("offline_simulation_disclosure", disclosures)
+        self.assertIn("masked_inference_features", disclosures)
+        self.assertIn("temporal_split_limitation", disclosures)
+
 
 if __name__ == "__main__":
     unittest.main()
