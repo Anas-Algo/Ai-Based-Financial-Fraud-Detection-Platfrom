@@ -47,7 +47,6 @@ type FormState = {
   channel: string;
   merchantCategory: string;
   country: string;
-  transactionTime: string;
 };
 
 const initialForm: FormState = {
@@ -56,7 +55,6 @@ const initialForm: FormState = {
   channel: "UPI",
   merchantCategory: "",
   country: "India",
-  transactionTime: "",
 };
 
 const channels = ["UPI", "Card", "Transfer", "Wallet", "ATM"];
@@ -145,7 +143,6 @@ function AnalyzePage() {
       channel: form.channel,
       merchantCategory: form.merchantCategory,
       country: form.country,
-      transactionTime: form.transactionTime.trim() || undefined,
     });
 
     setResult(response);
@@ -274,22 +271,6 @@ function AnalyzePage() {
                     {errors.country}
                   </p>
                 ) : null}
-              </div>
-
-              <div className="grid gap-2 sm:col-span-2">
-                <Label htmlFor="transactionTime" className="flex items-center justify-between">
-                  <span>Transaction Date & Time (Optional)</span>
-                  <span className="text-[11px] font-normal text-muted-foreground">
-                    Optional: leave blank to record at current analysis time
-                  </span>
-                </Label>
-                <input
-                  id="transactionTime"
-                  type="datetime-local"
-                  value={form.transactionTime}
-                  onChange={(e) => set("transactionTime")(e.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                />
               </div>
 
               <div className="flex flex-wrap gap-3 sm:col-span-2 pt-2">
