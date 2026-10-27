@@ -1,4 +1,4 @@
-# Pixel Match Crafter
+# AI-Based Financial Fraud Detection Platform
 
 Implement exactly the screenshot and nothing else
 
