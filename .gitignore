@@ -13,6 +13,10 @@ ENV/
 *.sqlite
 *.sqlite3
 
+# Large ML Model Artifacts & Datasets
+*.pkl
+backend/dataset/*.csv
+
 # Node / Frontend
 node_modules/
 .output/
@@ -22,6 +26,9 @@ dist-ssr/
 .vinxi/
 .tanstack/
 .wrangler/
+
+# Root legacy files
+/package-lock.json
 
 # Environment files and credentials
 .env
