@@ -84,6 +84,7 @@ class FraudLensApiTestCase(unittest.TestCase):
         payload = {
             "transactionId": "TXN-UNIT-LEGIT-01",
             "amount": 45.50,
+            "currency": "USD",
             "channel": "Card",
             "merchantCategory": "Groceries",
             "country": "India",
@@ -115,6 +116,7 @@ class FraudLensApiTestCase(unittest.TestCase):
         payload = {
             "transactionId": "TXN-UNIT-FRAUD-01",
             "amount": 281.06,
+            "currency": "USD",
             "channel": "Card",
             "merchantCategory": "grocery_pos",
             "gender": "M",
@@ -227,6 +229,7 @@ class FraudLensApiTestCase(unittest.TestCase):
         payload = {
             "transactionId": "TXN-HISTORICAL-01",
             "amount": 180.0,
+            "currency": "USD",
             "channel": "Card",
             "merchantCategory": "shopping_net",
             "transactionTime": "2019-01-02 01:06:37",
@@ -257,6 +260,7 @@ class FraudLensApiTestCase(unittest.TestCase):
         payload = {
             "transactionId": "TXN-MANUAL-NO-TIME-01",
             "amount": 95.0,
+            "currency": "USD",
             "channel": "UPI",
             "merchantCategory": "Groceries",
             "country": "India",
@@ -283,6 +287,7 @@ class FraudLensApiTestCase(unittest.TestCase):
         payload = {
             "transactionId": "TXN-IMPUTE-TEST-01",
             "amount": 125.75,
+            "currency": "USD",
             "channel": "UPI",
             "merchantCategory": "Restaurants",
             "country": "India",
@@ -332,6 +337,7 @@ class FraudLensApiTestCase(unittest.TestCase):
         payload = {
             "transactionId": "TXN-EXPLICIT-COORDS-01",
             "amount": 75.0,
+            "currency": "USD",
             "channel": "Card",
             "merchantCategory": "Entertainment",
             "gender": "F",
@@ -778,6 +784,7 @@ class FraudLensApiTestCase(unittest.TestCase):
         payload = {
             "transactionId": "TXN-EXPL-001",
             "amount": 950.0,
+            "currency": "USD",
             "channel": "UPI",
             "merchantCategory": "shopping_net",
             "country": "India",
@@ -984,16 +991,21 @@ class FraudLensApiTestCase(unittest.TestCase):
         self.assertEqual(res_usd.status_code, 200)
         self.assertEqual(res_usd.get_json()["currency"], "USD")
 
-    def test_30_missing_currency_compatibility_policy(self):
-        """Verify missing currency in predict payload defaults to USD with compatibility policy annotation."""
-        res = self.client.post(
+    def test_30_missing_currency_rejected_with_400(self):
+        """Verify missing or empty currency in predict payload returns HTTP 400 Bad Request."""
+        res_missing = self.client.post(
             "/api/predict",
             json={"amount": 65.0, "merchantCategory": "Groceries"},
         )
-        self.assertEqual(res.status_code, 200)
-        data = res.get_json()
-        self.assertEqual(data["currency"], "USD")
-        self.assertEqual(data.get("currency_policy"), "omitted_defaulted_to_usd")
+        self.assertEqual(res_missing.status_code, 400)
+        self.assertIn("currency is required", res_missing.get_json()["error"].lower())
+
+        res_empty = self.client.post(
+            "/api/predict",
+            json={"amount": 65.0, "currency": "   ", "merchantCategory": "Groceries"},
+        )
+        self.assertEqual(res_empty.status_code, 400)
+        self.assertIn("currency is required", res_empty.get_json()["error"].lower())
 
     def test_31_get_transactions_currency_serialization(self):
         """Verify GET /api/transactions returns currency as 'USD' or None for legacy records."""

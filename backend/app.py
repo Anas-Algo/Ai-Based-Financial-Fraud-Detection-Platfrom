@@ -241,27 +241,22 @@ def predict():
     if amount > 100_000_000:
         return jsonify({"error": "Amount exceeds maximum permitted limit (100,000,000)."}), 400
 
-    # 2b. Validate Currency & Compatibility Policy
+    # 2b. Validate Required Currency ("USD")
     raw_currency = data.get("currency")
-    currency = None
-    currency_policy = None
+    if raw_currency is None or str(raw_currency).strip() == "":
+        return jsonify({
+            "error": "Transaction currency is required and must be 'USD'. The model is calibrated exclusively for US Dollars."
+        }), 400
 
-    if raw_currency is not None and str(raw_currency).strip() != "":
-        cand_currency = str(raw_currency).strip().upper()
-        if cand_currency != "USD":
-            return jsonify({
-                "error": (
-                    f"The machine learning model is calibrated exclusively for US Dollars (USD). "
-                    f"Unsupported currency: '{raw_currency}'. Please provide transaction amounts in USD."
-                )
-            }), 400
-        currency = "USD"
-    else:
-        # Documented backward compatibility policy for legacy clients/tests:
-        # When currency is omitted, evaluate and persist as USD to match model calibration,
-        # and document that default assumption in the response.
-        currency = "USD"
-        currency_policy = "omitted_defaulted_to_usd"
+    cand_currency = str(raw_currency).strip().upper()
+    if cand_currency != "USD":
+        return jsonify({
+            "error": (
+                f"The machine learning model is calibrated exclusively for US Dollars (USD). "
+                f"Unsupported currency: '{raw_currency}'. Please provide transaction amounts in USD."
+            )
+        }), 400
+    currency = "USD"
 
     # 3. Transaction ID
     raw_id = str(data.get("transactionId") or data.get("transaction_id") or "").strip()
@@ -423,9 +418,6 @@ def predict():
             "created_at": analysis_now.isoformat(),
         },
     )
-
-    if currency_policy:
-        saved_record["currency_policy"] = currency_policy
 
     # 11. Generate per-transaction decision-path explanations
     explanations = None

@@ -9,8 +9,7 @@
 function readBaseUrl(): string {
   const envUrl =
     (typeof import.meta !== "undefined" && import.meta.env
-      ? (import.meta.env["VITE_FLASK_API_URL"] as string | undefined) ||
-        (import.meta.env.VITE_FLASK_API_URL as string | undefined)
+      ? (import.meta.env["VITE_FLASK_API_URL"] as string | undefined)
       : undefined) || "http://127.0.0.1:5000";
 
   return envUrl.trim().replace(/\/+$/, "") || "http://127.0.0.1:5000";
@@ -29,12 +28,12 @@ const REQUEST_TIMEOUT_MS = 15000;
 export type TransactionInput = {
   transactionId: string;
   amount: number;
-  currency?: string;
+  currency: string;
   channel: string;
   merchantCategory: string;
   country: string;
-  transactionTime?: string;
-  hoursSincePrevTxn?: number;
+  transactionTime?: string | undefined;
+  hoursSincePrevTxn?: number | undefined;
 };
 
 // ---------- Types: Responses (Standard Contract) ----------
@@ -60,7 +59,7 @@ export type PredictionExplanations = {
   threshold: number;
   factors: ExplanationFactor[];
   imputed_features_isolated: string[];
-  reconstruction_error?: number;
+  reconstruction_error?: number | undefined;
   disclaimer: string;
 };
 
@@ -73,18 +72,18 @@ export type Prediction = {
   confidence: number; // 0..1
   riskLevel: RiskLevel;
   amount: number;
-  currency?: string | null;
-  currencyPolicy?: string | null;
+  currency?: string | null | undefined;
+  currencyPolicy?: string | null | undefined;
   timestamp: string; // ISO 8601
-  transactionTime?: string | null;
-  hasTransactionTime?: boolean;
-  createdAt?: string;
-  channel?: string;
-  merchantCategory?: string;
-  country?: string;
-  hoursSincePrevTxn?: number;
-  isFraud?: number;
-  explanations?: PredictionExplanations | null;
+  transactionTime?: string | null | undefined;
+  hasTransactionTime?: boolean | undefined;
+  createdAt?: string | undefined;
+  channel?: string | undefined;
+  merchantCategory?: string | undefined;
+  country?: string | undefined;
+  hoursSincePrevTxn?: number | undefined;
+  isFraud?: number | undefined;
+  explanations?: PredictionExplanations | null | undefined;
 };
 
 /** GET /api/transactions item */
@@ -92,11 +91,11 @@ export type ApiTransaction = {
   transactionId: string;
   id: string;
   amount: number;
-  currency?: string | null;
+  currency?: string | null | undefined;
   timestamp: string;
-  transactionTime?: string | null;
-  hasTransactionTime?: boolean;
-  createdAt?: string;
+  transactionTime?: string | null | undefined;
+  hasTransactionTime?: boolean | undefined;
+  createdAt?: string | undefined;
   channel: string;
   merchantCategory: string;
   country: string;
@@ -129,23 +128,23 @@ export type Analytics = {
   labelDistribution: { name: string; value: number }[];
   transactionTrend: { day: string; transactions: number; flagged: number }[];
   amountBands: { band: string; count: number }[];
-  amountBandsCurrency?: string;
-  amountBandsTotal?: number;
-  unspecifiedAmountBands?: { band: string; count: number }[];
-  unspecifiedAmountTotal?: number;
-  amountBandsDisclosure?: string;
-  totalTransactions?: number;
-  fraudulentTransactions?: number;
-  legitimateTransactions?: number;
+  amountBandsCurrency?: string | undefined;
+  amountBandsTotal?: number | undefined;
+  unspecifiedAmountBands?: { band: string; count: number }[] | undefined;
+  unspecifiedAmountTotal?: number | undefined;
+  amountBandsDisclosure?: string | undefined;
+  totalTransactions?: number | undefined;
+  fraudulentTransactions?: number | undefined;
+  legitimateTransactions?: number | undefined;
 };
 
 /** GET /api/health response */
 export type HealthStatus = {
   status: string;
   model_loaded: boolean;
-  database?: string;
-  model_name?: string;
-  total_records?: number;
+  database?: string | undefined;
+  model_name?: string | undefined;
+  total_records?: number | undefined;
 };
 
 // ---------- Error Handling ----------

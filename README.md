@@ -304,7 +304,7 @@ Open **Terminal 2** (keep Terminal 1 running):
   ```
 - **Validation Rules**:
   - `amount`: Required, must be a numeric value $> 0$ and $\le 100,000,000$. Interpreted in US Dollars (USD) to match training calibration.
-  - `currency`: Optional string (defaults to `"USD"`). Only `"USD"` is accepted. Non-USD currency codes (e.g., `"EUR"`, `"INR"`) return `400 Bad Request`. When omitted, backward compatibility defaults to `"USD"` with `"currency_policy": "omitted_defaulted_to_usd"`.
+  - `currency`: Required string. Must be `"USD"`. Requests with missing or empty currency, or unsupported currency codes (e.g., `"EUR"`, `"INR"`), return `400 Bad Request`.
   - `channel`: Supported channels include `UPI`, `Card`, `Transfer`, `Wallet`, `ATM`.
   - `merchantCategory`: Mapped to internal dataset categories (`groceries` $\to$ `grocery_pos`, `restaurants` $\to$ `food_dining`, etc.).
 - **Response `200 OK`**:
@@ -317,7 +317,6 @@ Open **Terminal 2** (keep Terminal 1 running):
     "createdAt": "2026-10-26T15:25:50.013599+05:30",
     "created_at": "2026-10-26T15:25:50.013599+05:30",
     "currency": "USD",
-    "currency_policy": "explicit",
     "explanations": {
       "attribution_method": "Decision Tree Path Decomposition (Saabas)",
       "target_class": "Fraudulent",
@@ -517,8 +516,7 @@ The underlying Scikit-learn Random Forest model was trained on the Kaggle US fin
 
 Because `amt` accounts for **59.0%** of total feature split decisions in the ensemble, the model's decision boundaries are directly calibrated to USD purchasing values:
 - **Explicit USD Inputs**: The Analyze UI accepts transactions explicitly as **Amount (USD)** and passes `"currency": "USD"` in prediction requests.
-- **Strict Currency Validation**: The backend validates the `currency` parameter. Non-USD currency submissions (e.g., EUR, INR) are rejected with HTTP 400 Bad Request to prevent severe misclassification (e.g., treating a standard ₹2,500 INR grocery purchase as a high-risk \$2,500 USD transaction).
-- **Backward Compatibility Policy**: When the `currency` field is omitted from an API request, the server safely assumes USD for backward compatibility and annotates the response with `"currency_policy": "omitted_defaulted_to_usd"`.
+- **Strict Currency Contract**: The `currency` parameter is required for all inference requests. Requests with missing currency or non-USD currencies (e.g., EUR, INR) are rejected with HTTP 400 Bad Request to prevent severe misclassification (e.g., treating a standard ₹2,500 INR grocery purchase as a high-risk \$2,500 USD transaction).
 - **Historical Record Preservation**: Legacy SQLite records created before currency standardization are preserved with `currency = NULL`. The UI renders them with a `Legacy / Unspecified` indicator rather than silently relabeling them as USD.
 - **Analytics Isolation**: In aggregated analytics (`GET /api/analytics`), the `amountBands` distribution aggregates only verified USD transactions. Unspecified legacy transactions are isolated into `unspecifiedAmountTotal` to protect distribution statistics from denomination skew.
 
@@ -710,7 +708,7 @@ The project includes continuous verification suites:
   - Database schema migration idempotency and preservation of existing historical records (test 27)
   - Persistence of new USD transactions with explicit `currency` column population (test 28)
   - Explicit currency validation: acceptance of "USD" and rejection of non-USD currencies with 400 (test 29)
-  - Backward compatibility policy defaulting omitted currency to USD (test 30)
+  - Rejection of missing or empty currency requests with HTTP 400 Bad Request (test 30)
   - Transaction history GET endpoint currency serialization (test 31)
   - Analytics amount distribution segregation of USD bands from unspecified historical records (test 32)
 - **Offline Model Evaluator (`evaluate_model.py`)**:

@@ -183,13 +183,13 @@ function Dashboard() {
   type DisplayRow = {
     id: string;
     amount: number;
-    currency?: string | null;
+    currency?: string | null | undefined;
     timestamp: string;
-    createdAt?: string;
-    hasTransactionTime?: boolean;
+    createdAt?: string | undefined;
+    hasTransactionTime?: boolean | undefined;
     channel: string;
     label: string;
-    riskLevel?: string;
+    riskLevel?: string | undefined;
   };
 
   const recentLive = txData?.transactions ?? [];
@@ -223,7 +223,8 @@ function Dashboard() {
   // Distribution chart data
   const distributionData = useLive
     ? analytics?.labelDistribution &&
-      (analytics.labelDistribution[0]?.value > 0 || analytics.labelDistribution[1]?.value > 0)
+      ((analytics.labelDistribution[0]?.value ?? 0) > 0 ||
+        (analytics.labelDistribution[1]?.value ?? 0) > 0)
       ? analytics.labelDistribution
       : [
           { name: "Legitimate", value: legitimate },
