@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader, DemoBanner } from "@/components/PageHeader";
 import { analyzeTransaction, isApiConfigured, type PredictionResult } from "@/lib/fraud-api";
 import { apiKeys } from "@/lib/api-queries";
-import { formatAmount, formatTimestamp } from "@/lib/demo-data";
+import { formatAmount, formatTimestamp, formatTransactionAmount } from "@/lib/demo-data";
 
 export const Route = createFileRoute("/analyze")({
   head: () => ({
@@ -143,6 +143,7 @@ function AnalyzePage() {
     const response = await analyzeTransaction({
       transactionId: form.transactionId.trim(),
       amount: Number(form.amount),
+      currency: "USD",
       channel: form.channel,
       merchantCategory: form.merchantCategory,
       country: form.country,
@@ -228,15 +229,21 @@ function AnalyzePage() {
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Field
-                    id="amount"
-                    label="Amount (INR)"
-                    type="number"
-                    value={form.amount}
-                    onChange={set("amount")}
-                    error={errors.amount}
-                    placeholder="2500"
-                  />
+                  <div>
+                    <Field
+                      id="amount"
+                      label="Amount (USD)"
+                      type="number"
+                      value={form.amount}
+                      onChange={set("amount")}
+                      error={errors.amount}
+                      placeholder="45.00"
+                    />
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      The Random Forest model was trained on US credit card transactions and expects
+                      amounts in US Dollars ($).
+                    </p>
+                  </div>
                   <div className="grid gap-2">
                     <Label htmlFor="merchantCategory">Merchant Category</Label>
                     <select
@@ -459,7 +466,24 @@ function AnalyzePage() {
                       : "Unavailable"}
                   </dd>
                   <dt className="text-muted-foreground">Amount</dt>
-                  <dd>{formatAmount(result.prediction.amount)}</dd>
+                  <dd>
+                    {(() => {
+                      const formatted = formatTransactionAmount(
+                        result.prediction.amount,
+                        result.prediction.currency || "USD",
+                      );
+                      return (
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold">{formatted.text}</span>
+                          {formatted.isLegacy && (
+                            <Badge variant="outline" className="text-[10px] border-dashed">
+                              Legacy / Unspecified
+                            </Badge>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </dd>
                   <dt className="text-muted-foreground">Transaction ID</dt>
                   <dd
                     className="font-mono text-xs truncate"

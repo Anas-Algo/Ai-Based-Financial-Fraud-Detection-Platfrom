@@ -110,7 +110,7 @@ AI-BASED FINANCIAL FRAUD DETECTION/
 │   ├── evaluate_group_generalization.py # Isolated research evaluator for unseen-cardholder generalization
 │   ├── evaluate_chronological_generalization.py # Isolated research evaluator for chronological out-of-time evaluation
 │   ├── evaluation_report.json         # Serialized metrics, confusion matrices & disclosures
-│   ├── test_api.py                    # 26-test automated API, benchmark and attribution test suite
+│   ├── test_api.py                    # 32-test automated API, benchmark, attribution, and currency test suite
 │   ├── transactions.db               # SQLite audit database (auto-generated at runtime)
 │   └── requirements.txt               # Backend Python dependencies
 ├── frontend/
@@ -187,7 +187,7 @@ Open **Terminal 1** (PowerShell or Command Prompt):
    ```powershell
    python -m unittest test_api.py -v
    ```
-   *(All 26 tests should pass with `OK`).*
+   *(All 32 tests should pass with `OK`).*
 
 6. Start the Flask API server:
    ```powershell
@@ -296,13 +296,15 @@ Open **Terminal 2** (keep Terminal 1 running):
   {
     "transactionId": "TXN-100245",
     "amount": 2500.0,
+    "currency": "USD",
     "channel": "UPI",
     "merchantCategory": "Groceries",
     "country": "India"
   }
   ```
 - **Validation Rules**:
-  - `amount`: Required, must be a numeric value $> 0$ and $\le 100,000,000$.
+  - `amount`: Required, must be a numeric value $> 0$ and $\le 100,000,000$. Interpreted in US Dollars (USD) to match training calibration.
+  - `currency`: Optional string (defaults to `"USD"`). Only `"USD"` is accepted. Non-USD currency codes (e.g., `"EUR"`, `"INR"`) return `400 Bad Request`. When omitted, backward compatibility defaults to `"USD"` with `"currency_policy": "omitted_defaulted_to_usd"`.
   - `channel`: Supported channels include `UPI`, `Card`, `Transfer`, `Wallet`, `ATM`.
   - `merchantCategory`: Mapped to internal dataset categories (`groceries` $\to$ `grocery_pos`, `restaurants` $\to$ `food_dining`, etc.).
 - **Response `200 OK`**:
@@ -314,6 +316,8 @@ Open **Terminal 2** (keep Terminal 1 running):
     "country": "India",
     "createdAt": "2026-10-26T15:25:50.013599+05:30",
     "created_at": "2026-10-26T15:25:50.013599+05:30",
+    "currency": "USD",
+    "currency_policy": "explicit",
     "explanations": {
       "attribution_method": "Decision Tree Path Decomposition (Saabas)",
       "target_class": "Fraudulent",
@@ -415,6 +419,7 @@ Open **Terminal 2** (keep Terminal 1 running):
         "fraudProbability": 0.02,
         "riskLevel": "Low",
         "hasTransactionTime": false,
+        "currency": "USD",
         "timestamp": "2026-10-26T15:25:50.013599+05:30",
         "createdAt": "2026-10-26T15:25:50.013599+05:30"
       }
@@ -468,6 +473,9 @@ Open **Terminal 2** (keep Terminal 1 running):
       { "band": "3k–6k", "count": 2 },
       { "band": "6k+", "count": 1 }
     ],
+    "amountBandsCurrency": "USD",
+    "unspecifiedAmountTotal": 0,
+    "amountBandsDisclosure": "Amount distribution bands aggregate transactions denominated in USD. Historical legacy records with unspecified currency are excluded from USD bands to prevent denomination skew.",
     "transactionTrend": [
       { "day": "2026-10-26", "transactions": 3, "flagged": 1 }
     ],
@@ -502,6 +510,17 @@ The model outputs raw class probabilities via `predict_proba`. Fraud probability
 | $0.0\% \le P_{\text{fraud}} < 30.0\%$ | **Low** | Emerald Green | Auto-approve transaction |
 | $30.0\% \le P_{\text{fraud}} < 70.0\%$ | **Medium** | Amber Yellow | Flag for secondary verification / OTP |
 | $70.0\% \le P_{\text{fraud}} \le 100.0\%$ | **High** | Destructive Red | Immediate block & alert security analyst |
+
+### Model Input Currency Unit & Standardization (USD)
+
+The underlying Scikit-learn Random Forest model was trained on the Kaggle US financial transaction dataset (`fraudTrain.csv`), where the transaction amount feature (`amt`) is denominated in **US Dollars (USD)** (training mean $\mu = \$70.35$, median $=\$47.52$, 99th percentile $=\$1,006.10$). 
+
+Because `amt` accounts for **59.0%** of total feature split decisions in the ensemble, the model's decision boundaries are directly calibrated to USD purchasing values:
+- **Explicit USD Inputs**: The Analyze UI accepts transactions explicitly as **Amount (USD)** and passes `"currency": "USD"` in prediction requests.
+- **Strict Currency Validation**: The backend validates the `currency` parameter. Non-USD currency submissions (e.g., EUR, INR) are rejected with HTTP 400 Bad Request to prevent severe misclassification (e.g., treating a standard ₹2,500 INR grocery purchase as a high-risk \$2,500 USD transaction).
+- **Backward Compatibility Policy**: When the `currency` field is omitted from an API request, the server safely assumes USD for backward compatibility and annotates the response with `"currency_policy": "omitted_defaulted_to_usd"`.
+- **Historical Record Preservation**: Legacy SQLite records created before currency standardization are preserved with `currency = NULL`. The UI renders them with a `Legacy / Unspecified` indicator rather than silently relabeling them as USD.
+- **Analytics Isolation**: In aggregated analytics (`GET /api/analytics`), the `amountBands` distribution aggregates only verified USD transactions. Unspecified legacy transactions are isolated into `unspecifiedAmountTotal` to protect distribution statistics from denomination skew.
 
 ### Per-Transaction Prediction Explanations & Model Transparency
 
@@ -649,11 +668,19 @@ CREATE TABLE IF NOT EXISTS transactions (
     confidence REAL NOT NULL,
     risk_level TEXT NOT NULL,
     timestamp TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    currency TEXT DEFAULT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_tx_created ON transactions (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tx_fraud ON transactions (is_fraud);
 ```
+
+### Schema Migrations & Backward Compatibility
+Upon application startup, `backend/database.py` executes an idempotent migration check:
+1. Inspects table columns using `PRAGMA table_info(transactions)`.
+2. If the `currency` column is missing, executes `ALTER TABLE transactions ADD COLUMN currency TEXT DEFAULT NULL;`.
+3. Pre-existing historical rows retain `currency = NULL`, preserving their exact recorded numerical values without artificial conversion.
+4. New transactions recorded via the UI or API persist with explicit `currency = 'USD'`.
 
 ---
 
@@ -661,7 +688,7 @@ CREATE INDEX IF NOT EXISTS idx_tx_fraud ON transactions (is_fraud);
 
 The project includes continuous verification suites:
 
-- **Backend Test Suite (`test_api.py`)**: 26 automated test cases covering:
+- **Backend Test Suite (`test_api.py`)**: 32 automated test cases covering:
   - API health status and model availability (test 1)
   - Input validation: missing body, empty amount, negative values, non-numeric strings (tests 2–5)
   - Normalization of legitimate and fraudulent inference payloads (tests 6–7)
@@ -680,6 +707,12 @@ The project includes continuous verification suites:
   - Merchant-category one-hot dummy aggregation into a single factor (test 24)
   - API response backward compatibility with the `explanations` payload (test 25)
   - Explanation engine edge cases, extreme amounts ($0.01 and $100M), and invalid input validation (test 26)
+  - Database schema migration idempotency and preservation of existing historical records (test 27)
+  - Persistence of new USD transactions with explicit `currency` column population (test 28)
+  - Explicit currency validation: acceptance of "USD" and rejection of non-USD currencies with 400 (test 29)
+  - Backward compatibility policy defaulting omitted currency to USD (test 30)
+  - Transaction history GET endpoint currency serialization (test 31)
+  - Analytics amount distribution segregation of USD bands from unspecified historical records (test 32)
 - **Offline Model Evaluator (`evaluate_model.py`)**:
   - Reproducible offline benchmark script measuring both full-feature and UI-imputed performance on the production model's random held-out partition ($N = 259,335$).
   - Exports serialized metrics, confusion matrices, and risk threshold analyses to `backend/evaluation_report.json`.
@@ -706,3 +739,4 @@ The project includes continuous verification suites:
 4. **Demonstration Mode**: If the Flask backend service is offline, the frontend provides an optional synthetic demonstration mode to allow visual exploration of UI widgets without crashing.
 5. **Non-Causal Explanation Nature**: Per-transaction feature attributions quantify how feature values shifted the Random Forest prediction along decision tree paths relative to the training prior. They represent associative model decisions within the learned trees, not causal proof or bank-verified fraud evidence.
 6. **Payment Rail Metadata**: Digital channel selections (UPI, Card, Wallet, Transfer, ATM) are recorded as audit metadata and do not imply that the model evaluates live payment network protocols or banking clearing rules.
+7. **Currency Calibration**: The machine learning model is trained on US credit card transaction data with amount calibrated in US Dollars (USD). Transactions in other regional currencies must be evaluated in USD equivalents; legacy transactions recorded prior to currency standardization remain preserved with unspecified currency and are segregated from USD amount distribution analytics.

@@ -75,8 +75,53 @@ export const demoAmountBands = [
   { band: "6k+", count: demoTransactions.filter((t) => t.amount >= 6000).length },
 ];
 
-export function formatAmount(value: number) {
-  return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(value);
+export type FormattedCurrencyAmount = {
+  text: string;
+  badge: "Legacy / Unspecified" | null;
+  currency: "USD" | "INR" | null;
+  isLegacy: boolean;
+};
+
+export function formatTransactionAmount(
+  value: number,
+  currency?: string | null,
+): FormattedCurrencyAmount {
+  const num = Number(value);
+  const safeVal = Number.isFinite(num) ? num : 0;
+  const upper = typeof currency === "string" ? currency.trim().toUpperCase() : "";
+
+  if (upper === "USD") {
+    return {
+      text: new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(safeVal),
+      badge: null,
+      currency: "USD",
+      isLegacy: false,
+    };
+  }
+
+  if (upper === "INR") {
+    return {
+      text: new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(safeVal),
+      badge: null,
+      currency: "INR",
+      isLegacy: false,
+    };
+  }
+
+  // Legacy / Unspecified: display bare formatted amount with legacy badge
+  return {
+    text: new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(safeVal),
+    badge: "Legacy / Unspecified",
+    currency: null,
+    isLegacy: true,
+  };
+}
+
+export function formatAmount(value: number, currency?: string | null): string {
+  return formatTransactionAmount(value, currency).text;
 }
 
 export function formatTimestamp(iso: string): string {

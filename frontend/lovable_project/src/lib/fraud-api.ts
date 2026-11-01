@@ -29,6 +29,7 @@ const REQUEST_TIMEOUT_MS = 15000;
 export type TransactionInput = {
   transactionId: string;
   amount: number;
+  currency?: string;
   channel: string;
   merchantCategory: string;
   country: string;
@@ -72,6 +73,8 @@ export type Prediction = {
   confidence: number; // 0..1
   riskLevel: RiskLevel;
   amount: number;
+  currency?: string | null;
+  currencyPolicy?: string | null;
   timestamp: string; // ISO 8601
   transactionTime?: string | null;
   hasTransactionTime?: boolean;
@@ -89,6 +92,7 @@ export type ApiTransaction = {
   transactionId: string;
   id: string;
   amount: number;
+  currency?: string | null;
   timestamp: string;
   transactionTime?: string | null;
   hasTransactionTime?: boolean;
@@ -125,6 +129,11 @@ export type Analytics = {
   labelDistribution: { name: string; value: number }[];
   transactionTrend: { day: string; transactions: number; flagged: number }[];
   amountBands: { band: string; count: number }[];
+  amountBandsCurrency?: string;
+  amountBandsTotal?: number;
+  unspecifiedAmountBands?: { band: string; count: number }[];
+  unspecifiedAmountTotal?: number;
+  amountBandsDisclosure?: string;
   totalTransactions?: number;
   fraudulentTransactions?: number;
   legitimateTransactions?: number;
@@ -388,6 +397,12 @@ export function normalizePrediction(raw: unknown): Prediction {
     };
   }
 
+  const rawCurrency = raw["currency"];
+  const currency =
+    typeof rawCurrency === "string" && rawCurrency.trim() ? rawCurrency.trim().toUpperCase() : null;
+  const currencyPolicy =
+    typeof raw["currency_policy"] === "string" ? raw["currency_policy"] : undefined;
+
   return {
     transactionId,
     prediction,
@@ -396,6 +411,8 @@ export function normalizePrediction(raw: unknown): Prediction {
     confidence,
     riskLevel,
     amount: rawAmount,
+    currency,
+    currencyPolicy,
     timestamp: validTimestamp,
     transactionTime,
     hasTransactionTime,
@@ -448,10 +465,15 @@ export function normalizeTransactionItem(raw: unknown): ApiTransaction {
   }
   const transactionTime = hasTransactionTime ? timestamp : null;
 
+  const rawCurrency = raw["currency"];
+  const currency =
+    typeof rawCurrency === "string" && rawCurrency.trim() ? rawCurrency.trim().toUpperCase() : null;
+
   return {
     transactionId,
     id: transactionId,
     amount: Number.isFinite(amount) ? amount : 0,
+    currency,
     timestamp,
     transactionTime,
     hasTransactionTime,
@@ -539,11 +561,24 @@ export async function getAnalytics(): Promise<Analytics> {
     ? (json["amountBands"] as { band: string; count: number }[])
     : [];
 
+  const unspecifiedAmountBands = Array.isArray(json["unspecifiedAmountBands"])
+    ? (json["unspecifiedAmountBands"] as { band: string; count: number }[])
+    : [];
+
   return {
     channelBreakdown,
     labelDistribution,
     transactionTrend,
     amountBands,
+    amountBandsCurrency:
+      typeof json["amountBandsCurrency"] === "string" ? json["amountBandsCurrency"] : "USD",
+    amountBandsTotal: isFiniteNum(json["amountBandsTotal"]) ? json["amountBandsTotal"] : undefined,
+    unspecifiedAmountBands,
+    unspecifiedAmountTotal: isFiniteNum(json["unspecifiedAmountTotal"])
+      ? json["unspecifiedAmountTotal"]
+      : undefined,
+    amountBandsDisclosure:
+      typeof json["amountBandsDisclosure"] === "string" ? json["amountBandsDisclosure"] : undefined,
     totalTransactions: Number(json["totalTransactions"] ?? 0),
     fraudulentTransactions: Number(json["fraudulentTransactions"] ?? 0),
     legitimateTransactions: Number(json["legitimateTransactions"] ?? 0),

@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 from app import DB_PATH, app, explainer, model
-from database import IST_TZ, init_db, save_transaction
+from database import IST_TZ, get_transactions, init_db, save_transaction
 from explanation import DecisionPathExplainer
 
 
@@ -860,6 +860,217 @@ class FraudLensApiTestCase(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             explainer.explain(pd.concat([small_df, large_df]))  # 2 rows
+
+    # ========================================================
+    # Currency Standardization & Legacy Preservation Tests
+    # ========================================================
+
+    def test_27_database_migration_preserves_records_and_is_idempotent(self):
+        """Verify migration adds nullable currency column, preserves existing records, and is idempotent."""
+        import sqlite3
+
+        temp_dir = tempfile.mkdtemp()
+        old_db_path = os.path.join(temp_dir, "legacy.db")
+        try:
+            # 1. Create a legacy database without currency column
+            conn = sqlite3.connect(old_db_path)
+            conn.execute(
+                """
+                CREATE TABLE transactions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    transaction_id TEXT UNIQUE NOT NULL,
+                    amount REAL NOT NULL,
+                    channel TEXT NOT NULL,
+                    merchant_category TEXT NOT NULL,
+                    country TEXT NOT NULL,
+                    hours_since_prev_txn REAL NOT NULL,
+                    prediction TEXT NOT NULL,
+                    label TEXT NOT NULL,
+                    is_fraud INTEGER NOT NULL,
+                    fraud_probability REAL NOT NULL,
+                    confidence REAL NOT NULL,
+                    risk_level TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO transactions (
+                    transaction_id, amount, channel, merchant_category, country,
+                    hours_since_prev_txn, prediction, label, is_fraud,
+                    fraud_probability, confidence, risk_level, timestamp, created_at
+                ) VALUES ('LEGACY-01', 3150.0, 'UPI', 'Other', 'India', 0.0, 'Legitimate', 'Legitimate', 0, 0.01, 0.99, 'Low', '2026-10-24T00:00:00', '2026-10-24T00:00:00');
+                """
+            )
+            conn.commit()
+            conn.close()
+
+            # 2. Run init_db to execute non-destructive migration
+            init_db(old_db_path)
+
+            # 3. Verify column was added and existing record preserved with currency=NULL
+            conn = sqlite3.connect(old_db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(transactions)")
+            cols = [r["name"] for r in cursor.fetchall()]
+            self.assertIn("currency", cols)
+
+            cursor.execute("SELECT * FROM transactions WHERE transaction_id = 'LEGACY-01'")
+            row = cursor.fetchone()
+            self.assertEqual(row["amount"], 3150.0)
+            self.assertIsNone(row["currency"])
+            conn.close()
+
+            # 4. Run init_db again to verify idempotency
+            init_db(old_db_path)
+            conn = sqlite3.connect(old_db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM transactions")
+            self.assertEqual(cursor.fetchone()[0], 1)
+            conn.close()
+
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_28_new_usd_transaction_persistence(self):
+        """Verify save_transaction explicitly stores currency='USD'."""
+        record = {
+            "transactionId": "TXN-CURR-USD-01",
+            "amount": 45.0,
+            "currency": "USD",
+            "channel": "Card",
+            "merchantCategory": "Groceries",
+            "country": "US",
+            "prediction": "Legitimate",
+            "label": "Legitimate",
+            "is_fraud": 0,
+            "fraud_probability": 0.01,
+            "confidence": 0.99,
+            "risk_level": "Low",
+        }
+        res = save_transaction(self.test_db_path, record)
+        self.assertEqual(res["currency"], "USD")
+
+        # Verify from database
+        txs, _ = get_transactions(self.test_db_path, limit=50)
+        saved = next(t for t in txs if t["transactionId"] == "TXN-CURR-USD-01")
+        self.assertEqual(saved["currency"], "USD")
+
+    def test_29_explicit_currency_validation(self):
+        """Verify 400 Bad Request when unsupported currency (e.g., INR, EUR) is submitted."""
+        # Non-USD currency should be rejected with 400
+        res_inr = self.client.post(
+            "/api/predict",
+            json={"amount": 2500, "currency": "INR", "merchantCategory": "Groceries"},
+        )
+        self.assertEqual(res_inr.status_code, 400)
+        self.assertIn("calibrated exclusively for us dollars", res_inr.get_json()["error"].lower())
+
+        res_eur = self.client.post(
+            "/api/predict",
+            json={"amount": 50, "currency": "EUR", "merchantCategory": "Groceries"},
+        )
+        self.assertEqual(res_eur.status_code, 400)
+        self.assertIn("unsupported currency", res_eur.get_json()["error"].lower())
+
+        # Valid USD currency accepted
+        res_usd = self.client.post(
+            "/api/predict",
+            json={"amount": 50, "currency": "USD", "merchantCategory": "Groceries"},
+        )
+        self.assertEqual(res_usd.status_code, 200)
+        self.assertEqual(res_usd.get_json()["currency"], "USD")
+
+    def test_30_missing_currency_compatibility_policy(self):
+        """Verify missing currency in predict payload defaults to USD with compatibility policy annotation."""
+        res = self.client.post(
+            "/api/predict",
+            json={"amount": 65.0, "merchantCategory": "Groceries"},
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertEqual(data["currency"], "USD")
+        self.assertEqual(data.get("currency_policy"), "omitted_defaulted_to_usd")
+
+    def test_31_get_transactions_currency_serialization(self):
+        """Verify GET /api/transactions returns currency as 'USD' or None for legacy records."""
+        # Save a legacy-like record with currency=None
+        save_transaction(
+            self.test_db_path,
+            {
+                "transactionId": "TXN-LEGACY-NULL",
+                "amount": 200.0,
+                "currency": None,
+                "channel": "Card",
+                "merchantCategory": "Other",
+                "country": "India",
+            },
+        )
+        # Save a USD record
+        save_transaction(
+            self.test_db_path,
+            {
+                "transactionId": "TXN-MODERN-USD",
+                "amount": 75.0,
+                "currency": "USD",
+                "channel": "Card",
+                "merchantCategory": "Other",
+                "country": "US",
+            },
+        )
+
+        res = self.client.get("/api/transactions?limit=50")
+        self.assertEqual(res.status_code, 200)
+        txs = res.get_json()["transactions"]
+
+        legacy_item = next(t for t in txs if t["transactionId"] == "TXN-LEGACY-NULL")
+        self.assertIsNone(legacy_item["currency"])
+
+        modern_item = next(t for t in txs if t["transactionId"] == "TXN-MODERN-USD")
+        self.assertEqual(modern_item["currency"], "USD")
+
+    def test_32_analytics_separation_of_unspecified_amounts(self):
+        """Verify GET /api/analytics segregates USD amount bands from unspecified legacy amounts."""
+        temp_dir = tempfile.mkdtemp()
+        db_path = os.path.join(temp_dir, "analytics_test.db")
+        try:
+            init_db(db_path)
+            # Insert 1 USD transaction of $45 (band 0-1k)
+            save_transaction(
+                db_path,
+                {"transactionId": "TX-USD-1", "amount": 45.0, "currency": "USD", "is_fraud": 0},
+            )
+            # Insert 1 legacy unspecified transaction of 3150 (band 3k-6k)
+            save_transaction(
+                db_path,
+                {"transactionId": "TX-LEG-1", "amount": 3150.0, "currency": None, "is_fraud": 0},
+            )
+
+            from database import get_analytics
+            analytics = get_analytics(db_path)
+
+            self.assertEqual(analytics["amountBandsCurrency"], "USD")
+            self.assertEqual(analytics["amountBandsTotal"], 1)
+            # USD band 0-1k should have count 1, all other USD bands 0
+            usd_band_0_1k = next(b for b in analytics["amountBands"] if b["band"] == "0–1k")
+            self.assertEqual(usd_band_0_1k["count"], 1)
+            usd_band_3_6k = next(b for b in analytics["amountBands"] if b["band"] == "3k–6k")
+            self.assertEqual(usd_band_3_6k["count"], 0)
+
+            # Unspecified band 3k-6k should have count 1
+            self.assertEqual(analytics["unspecifiedAmountTotal"], 1)
+            unspec_3_6k = next(b for b in analytics["unspecifiedAmountBands"] if b["band"] == "3k–6k")
+            self.assertEqual(unspec_3_6k["count"], 1)
+
+            # Disclosure is present
+            self.assertIn("amountBandsDisclosure", analytics)
+            self.assertIn("US Dollars", analytics["amountBandsDisclosure"])
+
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

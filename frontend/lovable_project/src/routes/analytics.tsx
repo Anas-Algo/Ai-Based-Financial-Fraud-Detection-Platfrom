@@ -295,33 +295,57 @@ function AnalyticsPage() {
           {/* Amount Bands */}
           <Card className="shadow-card">
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-base">Transaction Amount Distribution</CardTitle>
+              <CardTitle className="text-base">Transaction Amount Distribution (USD)</CardTitle>
               <Badge variant="outline" className="text-xs font-normal">
-                {getBadgeText("Live Distribution", "Sample Bands")}
+                {getBadgeText("USD Denominated", "Sample Bands")}
               </Badge>
             </CardHeader>
-            <CardContent className="h-72">
-              {amountData.length > 0 && amountData.some((b) => b.count > 0) ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={amountData} margin={{ left: -16, right: 8, top: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                    <XAxis dataKey="band" tickLine={false} axisLine={false} fontSize={12} />
-                    <YAxis tickLine={false} axisLine={false} fontSize={12} />
-                    <Tooltip contentStyle={tooltipStyle} />
-                    <Bar
-                      dataKey="count"
-                      name="Transactions"
-                      fill="var(--chart-5)"
-                      radius={[6, 6, 0, 0]}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-muted-foreground">
-                  <Activity className="size-8 opacity-40" />
-                  <p className="text-sm">No amount data recorded yet.</p>
+            <CardContent className="space-y-3">
+              <div className="h-64">
+                {amountData.length > 0 && amountData.some((b) => b.count > 0) ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={amountData} margin={{ left: -16, right: 8, top: 8 }}>
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        stroke="var(--border)"
+                        vertical={false}
+                      />
+                      <XAxis dataKey="band" tickLine={false} axisLine={false} fontSize={12} />
+                      <YAxis tickLine={false} axisLine={false} fontSize={12} />
+                      <Tooltip contentStyle={tooltipStyle} />
+                      <Bar
+                        dataKey="count"
+                        name="USD Transactions"
+                        fill="var(--chart-5)"
+                        radius={[6, 6, 0, 0]}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center text-muted-foreground">
+                    <Activity className="size-8 opacity-40" />
+                    <p className="text-sm font-medium">No USD transactions recorded yet.</p>
+                    {isLiveMode && (analytics?.unspecifiedAmountTotal ?? 0) > 0 ? (
+                      <p className="max-w-xs text-xs">
+                        The database contains {analytics?.unspecifiedAmountTotal} historical record
+                        {analytics?.unspecifiedAmountTotal === 1 ? "" : "s"} with unspecified legacy
+                        currency, segregated to preserve distribution validity.
+                      </p>
+                    ) : (
+                      <p className="text-xs">New USD transactions will be plotted here.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+              {isLiveMode && (analytics?.unspecifiedAmountTotal ?? 0) > 0 ? (
+                <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5 text-[11px] text-muted-foreground leading-normal">
+                  <span className="font-semibold text-foreground">Currency Disclosure:</span>{" "}
+                  {analytics?.amountBandsDisclosure ||
+                    "Amount distribution aggregates transactions denominated in US Dollars (USD). Historical records created prior to currency standardization have unspecified currency units and are segregated."}{" "}
+                  ({analytics?.unspecifiedAmountTotal} legacy record
+                  {(analytics?.unspecifiedAmountTotal ?? 0) > 1 ? "s" : ""} segregated).
                 </div>
-              )}
+              ) : null}
             </CardContent>
           </Card>
 

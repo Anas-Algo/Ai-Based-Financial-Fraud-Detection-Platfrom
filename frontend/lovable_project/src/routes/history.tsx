@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/table";
 import { PageHeader } from "@/components/PageHeader";
 import { transactionsQueryOptions } from "@/lib/api-queries";
-import { formatAmount, formatTimestamp } from "@/lib/demo-data";
+import { formatAmount, formatTimestamp, formatTransactionAmount } from "@/lib/demo-data";
 import { isApiConfigured, type ApiTransaction } from "@/lib/fraud-api";
 
 export const Route = createFileRoute("/history")({
@@ -203,7 +203,24 @@ function HistoryPage() {
                       <TableCell className="font-mono text-xs font-medium">
                         {t.transactionId}
                       </TableCell>
-                      <TableCell className="font-medium">{formatAmount(t.amount)}</TableCell>
+                      <TableCell className="font-medium">
+                        {(() => {
+                          const formatted = formatTransactionAmount(t.amount, t.currency);
+                          return (
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5">
+                              <span>{formatted.text}</span>
+                              {formatted.isLegacy && (
+                                <Badge
+                                  variant="outline"
+                                  className="w-fit text-[9px] font-normal border-dashed text-muted-foreground"
+                                >
+                                  Legacy / Unspecified
+                                </Badge>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </TableCell>
                       <TableCell className="text-xs">{t.channel}</TableCell>
                       <TableCell className="text-xs capitalize">{t.merchantCategory}</TableCell>
                       <TableCell className="text-xs">

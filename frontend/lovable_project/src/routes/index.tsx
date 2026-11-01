@@ -54,6 +54,7 @@ import {
   demoTrend,
   formatAmount,
   formatTimestamp,
+  formatTransactionAmount,
 } from "@/lib/demo-data";
 
 export const Route = createFileRoute("/")({
@@ -182,6 +183,7 @@ function Dashboard() {
   type DisplayRow = {
     id: string;
     amount: number;
+    currency?: string | null;
     timestamp: string;
     createdAt?: string;
     hasTransactionTime?: boolean;
@@ -198,6 +200,7 @@ function Dashboard() {
       ? recentLive.map((t) => ({
           id: t.transactionId,
           amount: t.amount,
+          currency: t.currency,
           timestamp: t.timestamp,
           createdAt: t.createdAt,
           hasTransactionTime: t.hasTransactionTime,
@@ -209,6 +212,7 @@ function Dashboard() {
         ? recentDemo.map((t) => ({
             id: t.id,
             amount: t.amount,
+            currency: "USD",
             timestamp: t.timestamp,
             channel: t.channel,
             label: t.label,
@@ -527,7 +531,24 @@ function Dashboard() {
                 {displayRows.map((t) => (
                   <TableRow key={t.id}>
                     <TableCell className="font-mono text-xs">{t.id}</TableCell>
-                    <TableCell>{formatAmount(t.amount)}</TableCell>
+                    <TableCell>
+                      {(() => {
+                        const formatted = formatTransactionAmount(t.amount, t.currency);
+                        return (
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5">
+                            <span className="font-medium">{formatted.text}</span>
+                            {formatted.isLegacy && (
+                              <Badge
+                                variant="outline"
+                                className="w-fit text-[9px] font-normal border-dashed text-muted-foreground"
+                              >
+                                Legacy / Unspecified
+                              </Badge>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </TableCell>
                     <TableCell className="text-xs">
                       {t.hasTransactionTime ? (
                         <div className="space-y-0.5">

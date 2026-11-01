@@ -47,10 +47,17 @@ def init_db(db_path: str) -> None:
                 confidence REAL NOT NULL,
                 risk_level TEXT NOT NULL,
                 timestamp TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                currency TEXT DEFAULT NULL
             );
             """
         )
+        # Idempotent migration for existing database schemas:
+        cursor.execute("PRAGMA table_info(transactions)")
+        existing_cols = {row["name"] for row in cursor.fetchall()}
+        if "currency" not in existing_cols:
+            cursor.execute("ALTER TABLE transactions ADD COLUMN currency TEXT DEFAULT NULL;")
+
         cursor.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_transactions_created 
@@ -105,6 +112,12 @@ def save_transaction(db_path: str, record: Dict[str, Any]) -> Dict[str, Any]:
         or datetime.now(IST_TZ).isoformat()
     )
 
+    raw_currency = record.get("currency")
+    if raw_currency is not None and str(raw_currency).strip():
+        currency = str(raw_currency).strip().upper()
+    else:
+        currency = None
+
     with get_db(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -112,8 +125,9 @@ def save_transaction(db_path: str, record: Dict[str, Any]) -> Dict[str, Any]:
             INSERT INTO transactions (
                 transaction_id, amount, channel, merchant_category, country,
                 hours_since_prev_txn, prediction, label, is_fraud,
-                fraud_probability, confidence, risk_level, timestamp, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                fraud_probability, confidence, risk_level, timestamp, created_at,
+                currency
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(transaction_id) DO UPDATE SET
                 amount = excluded.amount,
                 channel = excluded.channel,
@@ -127,7 +141,8 @@ def save_transaction(db_path: str, record: Dict[str, Any]) -> Dict[str, Any]:
                 confidence = excluded.confidence,
                 risk_level = excluded.risk_level,
                 timestamp = excluded.timestamp,
-                created_at = excluded.created_at;
+                created_at = excluded.created_at,
+                currency = excluded.currency;
             """,
             (
                 txn_id,
@@ -144,6 +159,7 @@ def save_transaction(db_path: str, record: Dict[str, Any]) -> Dict[str, Any]:
                 risk_level,
                 timestamp,
                 created_at,
+                currency,
             ),
         )
         conn.commit()
@@ -152,6 +168,7 @@ def save_transaction(db_path: str, record: Dict[str, Any]) -> Dict[str, Any]:
         "transactionId": txn_id,
         "transaction_id": txn_id,
         "amount": amount,
+        "currency": currency,
         "channel": channel,
         "merchantCategory": merchant_category,
         "merchant_category": merchant_category,
@@ -222,11 +239,16 @@ def get_transactions(db_path: str, limit: int = 100) -> Tuple[List[Dict[str, Any
             except Exception:
                 has_txn_time = ts != ca
 
+        curr = None
+        if "currency" in r.keys() and r["currency"]:
+            curr = str(r["currency"]).strip().upper()
+
         results.append({
             "transactionId": r["transaction_id"],
             "transaction_id": r["transaction_id"],
             "id": r["transaction_id"],
             "amount": float(r["amount"]),
+            "currency": curr,
             "channel": r["channel"],
             "merchantCategory": r["merchant_category"],
             "merchant_category": r["merchant_category"],
@@ -364,24 +386,49 @@ def get_analytics(db_path: str) -> Dict[str, Any]:
             for r in trend_rows
         ]
 
-        # 4. Amount bands
+        # 4. Amount bands: Segregate USD amounts from legacy unspecified amounts
         cursor.execute(
             """
             SELECT 
                 SUM(CASE WHEN amount < 1000 THEN 1 ELSE 0 END) AS band1,
                 SUM(CASE WHEN amount >= 1000 AND amount < 3000 THEN 1 ELSE 0 END) AS band2,
                 SUM(CASE WHEN amount >= 3000 AND amount < 6000 THEN 1 ELSE 0 END) AS band3,
-                SUM(CASE WHEN amount >= 6000 THEN 1 ELSE 0 END) AS band4
+                SUM(CASE WHEN amount >= 6000 THEN 1 ELSE 0 END) AS band4,
+                COUNT(*) AS total_usd
             FROM transactions
+            WHERE currency = 'USD'
             """
         )
-        bands_row = cursor.fetchone()
+        usd_bands_row = cursor.fetchone()
+        usd_total_in_bands = usd_bands_row["total_usd"] or 0
+
+        cursor.execute(
+            """
+            SELECT 
+                SUM(CASE WHEN amount < 1000 THEN 1 ELSE 0 END) AS band1,
+                SUM(CASE WHEN amount >= 1000 AND amount < 3000 THEN 1 ELSE 0 END) AS band2,
+                SUM(CASE WHEN amount >= 3000 AND amount < 6000 THEN 1 ELSE 0 END) AS band3,
+                SUM(CASE WHEN amount >= 6000 THEN 1 ELSE 0 END) AS band4,
+                COUNT(*) AS total_unspecified
+            FROM transactions
+            WHERE currency IS NULL OR currency != 'USD'
+            """
+        )
+        unspecified_bands_row = cursor.fetchone()
+        unspecified_total_in_bands = unspecified_bands_row["total_unspecified"] or 0
 
     amount_bands = [
-        {"band": "0–1k", "count": bands_row["band1"] or 0},
-        {"band": "1k–3k", "count": bands_row["band2"] or 0},
-        {"band": "3k–6k", "count": bands_row["band3"] or 0},
-        {"band": "6k+", "count": bands_row["band4"] or 0},
+        {"band": "0–1k", "count": usd_bands_row["band1"] or 0},
+        {"band": "1k–3k", "count": usd_bands_row["band2"] or 0},
+        {"band": "3k–6k", "count": usd_bands_row["band3"] or 0},
+        {"band": "6k+", "count": usd_bands_row["band4"] or 0},
+    ]
+
+    unspecified_amount_bands = [
+        {"band": "0–1k", "count": unspecified_bands_row["band1"] or 0},
+        {"band": "1k–3k", "count": unspecified_bands_row["band2"] or 0},
+        {"band": "3k–6k", "count": unspecified_bands_row["band3"] or 0},
+        {"band": "6k+", "count": unspecified_bands_row["band4"] or 0},
     ]
 
     label_distribution = [
@@ -394,6 +441,15 @@ def get_analytics(db_path: str) -> Dict[str, Any]:
         "labelDistribution": label_distribution,
         "transactionTrend": trend_data,
         "amountBands": amount_bands,
+        "amountBandsCurrency": "USD",
+        "amountBandsTotal": usd_total_in_bands,
+        "unspecifiedAmountBands": unspecified_amount_bands,
+        "unspecifiedAmountTotal": unspecified_total_in_bands,
+        "amountBandsDisclosure": (
+            "Amount distribution aggregates transactions denominated in US Dollars (USD). "
+            "Historical records created prior to currency standardization have unspecified "
+            "currency units and are segregated to prevent cross-currency distortion."
+        ),
         "totalTransactions": legit_total + fraud_total,
         "fraudulentTransactions": fraud_total,
         "legitimateTransactions": legit_total,
