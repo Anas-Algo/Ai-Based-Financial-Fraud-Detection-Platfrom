@@ -1,7 +1,8 @@
 """
 FraudLens Prediction Explanation Engine
 Provides deterministic, per-transaction decision-path feature attributions
-for the fitted Scikit-learn RandomForestClassifier pipeline.
+for the fitted Scikit-learn RandomForestClassifier pipelines (both legacy US
+and new Indian UPI models).
 
 Methodology & Mathematical Safeguards:
 -------------------------------------
@@ -9,8 +10,8 @@ Methodology & Mathematical Safeguards:
    The baseline (prior) is defined as the ensemble's expected fraud probability
    at the root nodes of all decision trees:
        P_base = (1 / M) * sum_{m=1}^M P^{(m)}(root)
-   Because the model was trained with class_weight='balanced_subsample',
-   P_base is exactly 0.5000 (50.0%) across all 100 trees.
+   When trained with class_weight='balanced_subsample', P_base reflects
+   the balanced root prior across all trees.
 
 2. Exact Ensemble Additivity:
    For any sample traversing tree m from root n_0 to leaf n_k, the leaf probability
@@ -23,18 +24,15 @@ Methodology & Mathematical Safeguards:
    This decomposition matches model.predict_proba down to floating-point precision (< 1e-12).
 
 3. Categorical Aggregation:
-   The pipeline one-hot encodes 'category' into 14 dummy columns. Individual dummy
-   contributions (both active and inactive branches) are summed into a single coherent
-   attribution for 'Merchant Category'.
+   One-hot encoded dummy indicator columns for merchant category and transaction type
+   are aggregated into single coherent attributions.
 
 4. Imputed Feature Isolation:
-   Uncollected features ('gender', 'lat', 'long', 'city_pop', 'merch_lat', 'merch_long')
-   are imputed to fixed training medians/modes. Because users do not supply these values,
-   their tree contributions are strictly isolated into 'imputed_context_contribution'
-   and are NEVER presented as user-provided risk factors.
+   Uncollected features in legacy models ('gender', 'lat', 'long', 'city_pop', 'merch_lat', 'merch_long')
+   are isolated into 'imputed_context_contribution' and are NEVER presented as user-provided risk factors.
 
 5. Thresholding & Neutral Wording:
-   Only active user inputs with absolute contributions >= 1 percentage point (|C| >= 0.01)
+   Only active inputs with absolute contributions >= threshold (|C| >= 0.01)
    are surfaced as factors. Neutral wording is enforced; attributions describe internal
    model decisions and do not claim causal or bank-verified truth.
 """
@@ -47,10 +45,15 @@ import pandas as pd
 # Feature groupings in FraudLens
 ACTIVE_USER_FEATURES = {
     "amt",
+    "amount",
     "category",
+    "merchant_category",
+    "transaction_type",
     "transaction_hour",
     "transaction_day",
     "transaction_month",
+    "day_of_week",
+    "is_weekend",
 }
 
 UNCOLLECTED_CONTEXT_FEATURES = {
@@ -68,7 +71,8 @@ DEFAULT_CONTRIBUTION_THRESHOLD = 0.01  # 1.0 percentage point
 class DecisionPathExplainer:
     """
     Computes exact, deterministic decision-path feature attributions
-    for the FraudLens RandomForestClassifier pipeline.
+    for FraudLens RandomForestClassifier pipelines.
+    Supports both legacy US credit card and Indian UPI models.
     """
 
     def __init__(self, pipeline: Any):
@@ -104,21 +108,31 @@ class DecisionPathExplainer:
         self.n_features = len(self.feature_names)
         self.n_estimators = len(self.classifier.estimators_)
 
-        # Identify column indices for aggregation
+        # Identify column indices for categorical aggregations
         self.category_indices: List[int] = [
-            i for i, f in enumerate(self.feature_names) if f.startswith("categorical__category_")
+            i for i, f in enumerate(self.feature_names)
+            if f.startswith("categorical__category_") or f.startswith("categorical__merchant_category_")
+        ]
+        self.type_indices: List[int] = [
+            i for i, f in enumerate(self.feature_names)
+            if f.startswith("categorical__transaction_type_")
         ]
         self.gender_indices: List[int] = [
-            i for i, f in enumerate(self.feature_names) if f.startswith("categorical__gender_")
+            i for i, f in enumerate(self.feature_names)
+            if f.startswith("categorical__gender_")
         ]
-        self.amount_idx: int = self._find_feature_index("numerical__amt")
-        self.hour_idx: int = self._find_feature_index("numerical__transaction_hour")
-        self.day_idx: int = self._find_feature_index("numerical__transaction_day")
-        self.month_idx: int = self._find_feature_index("numerical__transaction_month")
+
+        # Numeric feature indices
+        self.amount_idx: Optional[int] = self._find_first_feature_index(["numerical__amt", "numerical__amount"])
+        self.hour_idx: Optional[int] = self._find_first_feature_index(["numerical__transaction_hour"])
+        self.day_idx: Optional[int] = self._find_first_feature_index(["numerical__transaction_day"])
+        self.month_idx: Optional[int] = self._find_first_feature_index(["numerical__transaction_month"])
+        self.weekday_idx: Optional[int] = self._find_first_feature_index(["numerical__day_of_week"])
+        self.weekend_idx: Optional[int] = self._find_first_feature_index(["numerical__is_weekend"])
 
         # Uncollected feature columns in preprocessed space
         self.imputed_feature_indices: List[int] = self.gender_indices + [
-            self._find_feature_index(f"numerical__{col}")
+            self.feature_names.index(f"numerical__{col}")
             for col in ["lat", "long", "city_pop", "merch_lat", "merch_long"]
             if f"numerical__{col}" in self.feature_names
         ]
@@ -136,9 +150,16 @@ class DecisionPathExplainer:
         # Base prior: average fraud probability at tree root nodes
         self.base_probability = float(np.mean([item[2] for item in self.cached_tree_data]))
 
+    def _find_first_feature_index(self, names: List[str]) -> Optional[int]:
+        for name in names:
+            if name in self.feature_names:
+                return self.feature_names.index(name)
+        return None
+
     def _find_feature_index(self, name: str) -> int:
-        if name in self.feature_names:
-            return self.feature_names.index(name)
+        idx = self._find_first_feature_index([name])
+        if idx is not None:
+            return idx
         raise ValueError(f"Feature '{name}' not found in preprocessor feature names.")
 
     def explain(
@@ -201,31 +222,44 @@ class DecisionPathExplainer:
             )
 
         # 5. Aggregate one-hot category dummies into single Merchant Category attribution
-        category_contrib = float(np.sum(feat_contribs[self.category_indices]))
+        category_contrib = float(np.sum(feat_contribs[self.category_indices])) if self.category_indices else 0.0
+        type_contrib = float(np.sum(feat_contribs[self.type_indices])) if self.type_indices else 0.0
 
         # Active input contributions
-        amount_contrib = float(feat_contribs[self.amount_idx])
-        hour_contrib = float(feat_contribs[self.hour_idx])
-        day_contrib = float(feat_contribs[self.day_idx])
-        month_contrib = float(feat_contribs[self.month_idx])
+        amount_contrib = float(feat_contribs[self.amount_idx]) if self.amount_idx is not None else 0.0
+        hour_contrib = float(feat_contribs[self.hour_idx]) if self.hour_idx is not None else 0.0
+        day_contrib = float(feat_contribs[self.day_idx]) if self.day_idx is not None else 0.0
+        month_contrib = float(feat_contribs[self.month_idx]) if self.month_idx is not None else 0.0
+        weekday_contrib = float(feat_contribs[self.weekday_idx]) if self.weekday_idx is not None else 0.0
+        weekend_contrib = float(feat_contribs[self.weekend_idx]) if self.weekend_idx is not None else 0.0
 
         # 6. Isolate imputed features (uncollected context)
-        # Check which context features in the input were missing/imputed
         imputed_features_detected: List[str] = [
             col for col in UNCOLLECTED_CONTEXT_FEATURES
             if col not in input_df.columns or pd.isna(row.get(col))
         ]
-        imputed_contrib = float(np.sum(feat_contribs[self.imputed_feature_indices]))
+        imputed_contrib = float(np.sum(feat_contribs[self.imputed_feature_indices])) if self.imputed_feature_indices else 0.0
 
         # Effective baseline after static imputed training defaults are applied
         effective_baseline = self.base_probability + imputed_contrib
 
         # 7. Collect and threshold active candidate factors
-        raw_amt = float(row["amt"]) if "amt" in row and not pd.isna(row["amt"]) else 0.0
-        raw_cat = str(row["category"]) if "category" in row and not pd.isna(row["category"]) else "other"
+        # Currency formatting: USD uses $, INR uses Rs / ₹
+        is_inr = ("currency" in row and str(row["currency"]).upper() == "INR") or ("amount" in row and "amt" not in row)
+        curr_symbol = "Rs " if is_inr else "$"
+
+        raw_amt = float(row["amount"]) if "amount" in row and not pd.isna(row["amount"]) else (
+            float(row["amt"]) if "amt" in row and not pd.isna(row["amt"]) else 0.0
+        )
+        raw_cat = str(row["merchant_category"]) if "merchant_category" in row and not pd.isna(row["merchant_category"]) else (
+            str(row["category"]) if "category" in row and not pd.isna(row["category"]) else "other"
+        )
+        raw_type = str(row["transaction_type"]) if "transaction_type" in row and not pd.isna(row["transaction_type"]) else None
         raw_hour = int(row["transaction_hour"]) if "transaction_hour" in row and not pd.isna(row["transaction_hour"]) else 0
         raw_day = int(row["transaction_day"]) if "transaction_day" in row and not pd.isna(row["transaction_day"]) else 1
         raw_month = int(row["transaction_month"]) if "transaction_month" in row and not pd.isna(row["transaction_month"]) else 1
+        raw_weekday = int(row["day_of_week"]) if "day_of_week" in row and not pd.isna(row["day_of_week"]) else None
+        raw_weekend = int(row["is_weekend"]) if "is_weekend" in row and not pd.isna(row["is_weekend"]) else None
 
         candidates = [
             (
@@ -233,7 +267,7 @@ class DecisionPathExplainer:
                 raw_amt,
                 amount_contrib,
                 (
-                    f"Transaction amount (${raw_amt:.2f}) contributed "
+                    f"Transaction amount ({curr_symbol}{raw_amt:.2f}) contributed "
                     f"{amount_contrib * 100:+.1f}% to model fraud probability relative to baseline."
                 ),
             ),
@@ -274,6 +308,39 @@ class DecisionPathExplainer:
                 ),
             ),
         ]
+
+        if raw_type is not None and self.type_indices:
+            candidates.append((
+                "Transaction Type",
+                raw_type,
+                type_contrib,
+                (
+                    f"Transaction type '{raw_type}' contributed "
+                    f"{type_contrib * 100:+.1f}% to model fraud probability relative to baseline."
+                ),
+            ))
+
+        if raw_weekday is not None and self.weekday_idx is not None:
+            candidates.append((
+                "Day of Week",
+                raw_weekday,
+                weekday_contrib,
+                (
+                    f"Day of week ({raw_weekday}) contributed "
+                    f"{weekday_contrib * 100:+.1f}% to model fraud probability relative to baseline."
+                ),
+            ))
+
+        if raw_weekend is not None and self.weekend_idx is not None:
+            candidates.append((
+                "Weekend Indicator",
+                raw_weekend,
+                weekend_contrib,
+                (
+                    f"Weekend indicator ({raw_weekend}) contributed "
+                    f"{weekend_contrib * 100:+.1f}% to model fraud probability relative to baseline."
+                ),
+            ))
 
         active_factors: List[Dict[str, Any]] = []
         for feat_name, val, contrib, desc in candidates:
