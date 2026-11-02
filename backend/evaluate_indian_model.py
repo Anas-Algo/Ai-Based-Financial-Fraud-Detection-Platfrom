@@ -103,6 +103,7 @@ def evaluate_indian_model(threshold: float = 0.50) -> Dict[str, Any]:
 
     cm = confusion_matrix(y_test, y_pred, labels=[0, 1])
     tn, fp, fn, tp = int(cm[0, 0]), int(cm[0, 1]), int(cm[1, 0]), int(cm[1, 1])
+    fpr = float(fp / (fp + tn)) if (fp + tn) > 0 else 0.0
 
     # Structure detailed evaluation report
     report: Dict[str, Any] = {
@@ -159,6 +160,7 @@ def evaluate_indian_model(threshold: float = 0.50) -> Dict[str, Any]:
             "f1_score": round(f1, 4),
             "pr_auc": round(pr_auc, 4),
             "roc_auc": round(roc_auc, 4),
+            "false_positive_rate": round(fpr, 4),
             "confusion_matrix": {
                 "true_negatives": tn,
                 "false_positives": fp,
@@ -179,6 +181,7 @@ def evaluate_indian_model(threshold: float = 0.50) -> Dict[str, Any]:
     print(f"F1 Score:              {f1:.4f}")
     print(f"PR-AUC (Avg Prec):     {pr_auc:.4f}")
     print(f"ROC-AUC:               {roc_auc:.4f}")
+    print(f"False Positive Rate:   {fpr * 100:.2f}%")
     print(f"True Positives:        {tp}")
     print(f"False Positives:       {fp}")
     print(f"False Negatives:       {fn}")

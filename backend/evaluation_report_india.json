@@ -3,10 +3,10 @@
     "title": "FraudLens Indian UPI Model Chronological Out-of-Time Benchmark",
     "model_type": "Pipeline(ColumnTransformer + RandomForestClassifier)",
     "model_file": "fraudlens_india_pipeline.pkl",
-    "model_size_mb": 1.198,
+    "model_size_mb": 1.1782,
     "dataset_file": "synthetic_baseline_inr.csv",
     "currency": "INR",
-    "evaluation_timestamp": "2026-11-03T00:06:37.823632+05:30",
+    "evaluation_timestamp": "2026-11-03T00:37:23.894733+05:30",
     "partitioning_strategy": "Chronological Out-of-Time (80% Train, 20% Held-Out Test)",
     "evaluation_disclosure": "ACADEMIC SIMULATION NOTICE: All metrics evaluate discriminative performance on the synthetic Indian UPI transaction baseline. They do not represent live NPCI clearing network protection or verified commercial bank fraud detection."
   },
@@ -14,19 +14,19 @@
     "total_samples": 50000,
     "train_samples": 40000,
     "test_samples": 10000,
-    "cutoff_timestamp": "2024-05-23T19:44:50.244443+05:30",
+    "cutoff_timestamp": "2024-05-23T18:11:07.273623+05:30",
     "train_date_range": {
-      "start": "2024-01-01T00:03:24.797373+05:30",
-      "end": "2024-05-23T19:43:57.742183+05:30"
+      "start": "2024-01-01T00:28:24.639440+05:30",
+      "end": "2024-05-23T18:10:16.765669+05:30"
     },
     "test_date_range": {
-      "start": "2024-05-23T19:44:50.244443+05:30",
-      "end": "2024-06-28T23:58:21.540195+05:30"
+      "start": "2024-05-23T18:11:07.273623+05:30",
+      "end": "2024-06-28T23:50:00.456102+05:30"
     },
     "train_class_distribution": {
-      "legitimate": 39517,
-      "fraudulent": 483,
-      "fraud_rate_percent": 1.21
+      "legitimate": 39519,
+      "fraudulent": 481,
+      "fraud_rate_percent": 1.2
     },
     "test_class_distribution": {
       "legitimate": 9895,
@@ -43,16 +43,17 @@
   },
   "metrics": {
     "decision_threshold": 0.5,
-    "precision": 0.0948,
-    "recall": 0.5048,
-    "f1_score": 0.1596,
-    "pr_auc": 0.1191,
-    "roc_auc": 0.8333,
+    "precision": 0.0653,
+    "recall": 0.4762,
+    "f1_score": 0.1148,
+    "pr_auc": 0.0708,
+    "roc_auc": 0.8061,
+    "false_positive_rate": 0.0724,
     "confusion_matrix": {
-      "true_negatives": 9389,
-      "false_positives": 506,
-      "false_negatives": 52,
-      "true_positives": 53
+      "true_negatives": 9179,
+      "false_positives": 716,
+      "false_negatives": 55,
+      "true_positives": 50
     }
   },
   "features_evaluated": [

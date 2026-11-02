@@ -1,0 +1,310 @@
+{
+  "metadata": {
+    "title": "FraudLens Synthetic Indian UPI Benchmark Summary Report",
+    "generated_at": "2026-11-03T00:36:53.718465+05:30",
+    "currency": "INR",
+    "date_range_start": "2024-01-01T00:28:24.639440+05:30",
+    "date_range_end": "2024-06-28T23:50:00.456102+05:30",
+    "random_state": 42,
+    "dataset_sha256": "e8aa8f3b48170fff028922ba58dc7211a910a6a4aabb1df14a1d7e2a236156b3",
+    "notice": "ACADEMIC SIMULATION NOTICE: All distributions reflect synthetic stochastic modeling. They do not represent live NPCI network or bank clearing traffic."
+  },
+  "overall_prevalence": {
+    "total_samples": 50000,
+    "legitimate_count": 49414,
+    "fraudulent_count": 586,
+    "fraud_rate_percent": 1.17,
+    "amount_min_inr": 21.72,
+    "amount_median_inr": 473.58000000000004,
+    "amount_mean_inr": 1164.49,
+    "amount_max_inr": 100000.0
+  },
+  "hourly_distribution": [
+    {
+      "hour": 0,
+      "total_transactions": 828,
+      "volume_percent": 1.66,
+      "fraud_count": 18,
+      "fraud_rate_percent": 2.17
+    },
+    {
+      "hour": 1,
+      "total_transactions": 385,
+      "volume_percent": 0.77,
+      "fraud_count": 19,
+      "fraud_rate_percent": 4.94
+    },
+    {
+      "hour": 2,
+      "total_transactions": 228,
+      "volume_percent": 0.46,
+      "fraud_count": 10,
+      "fraud_rate_percent": 4.39
+    },
+    {
+      "hour": 3,
+      "total_transactions": 187,
+      "volume_percent": 0.37,
+      "fraud_count": 6,
+      "fraud_rate_percent": 3.21
+    },
+    {
+      "hour": 4,
+      "total_transactions": 242,
+      "volume_percent": 0.48,
+      "fraud_count": 10,
+      "fraud_rate_percent": 4.13
+    },
+    {
+      "hour": 5,
+      "total_transactions": 475,
+      "volume_percent": 0.95,
+      "fraud_count": 14,
+      "fraud_rate_percent": 2.95
+    },
+    {
+      "hour": 6,
+      "total_transactions": 794,
+      "volume_percent": 1.59,
+      "fraud_count": 9,
+      "fraud_rate_percent": 1.13
+    },
+    {
+      "hour": 7,
+      "total_transactions": 1316,
+      "volume_percent": 2.63,
+      "fraud_count": 20,
+      "fraud_rate_percent": 1.52
+    },
+    {
+      "hour": 8,
+      "total_transactions": 1750,
+      "volume_percent": 3.5,
+      "fraud_count": 24,
+      "fraud_rate_percent": 1.37
+    },
+    {
+      "hour": 9,
+      "total_transactions": 2398,
+      "volume_percent": 4.8,
+      "fraud_count": 29,
+      "fraud_rate_percent": 1.21
+    },
+    {
+      "hour": 10,
+      "total_transactions": 2747,
+      "volume_percent": 5.49,
+      "fraud_count": 25,
+      "fraud_rate_percent": 0.91
+    },
+    {
+      "hour": 11,
+      "total_transactions": 3084,
+      "volume_percent": 6.17,
+      "fraud_count": 27,
+      "fraud_rate_percent": 0.88
+    },
+    {
+      "hour": 12,
+      "total_transactions": 3068,
+      "volume_percent": 6.14,
+      "fraud_count": 24,
+      "fraud_rate_percent": 0.78
+    },
+    {
+      "hour": 13,
+      "total_transactions": 2927,
+      "volume_percent": 5.85,
+      "fraud_count": 24,
+      "fraud_rate_percent": 0.82
+    },
+    {
+      "hour": 14,
+      "total_transactions": 2752,
+      "volume_percent": 5.5,
+      "fraud_count": 28,
+      "fraud_rate_percent": 1.02
+    },
+    {
+      "hour": 15,
+      "total_transactions": 2581,
+      "volume_percent": 5.16,
+      "fraud_count": 28,
+      "fraud_rate_percent": 1.08
+    },
+    {
+      "hour": 16,
+      "total_transactions": 2758,
+      "volume_percent": 5.52,
+      "fraud_count": 23,
+      "fraud_rate_percent": 0.83
+    },
+    {
+      "hour": 17,
+      "total_transactions": 3117,
+      "volume_percent": 6.23,
+      "fraud_count": 31,
+      "fraud_rate_percent": 0.99
+    },
+    {
+      "hour": 18,
+      "total_transactions": 3528,
+      "volume_percent": 7.06,
+      "fraud_count": 30,
+      "fraud_rate_percent": 0.85
+    },
+    {
+      "hour": 19,
+      "total_transactions": 3912,
+      "volume_percent": 7.82,
+      "fraud_count": 38,
+      "fraud_rate_percent": 0.97
+    },
+    {
+      "hour": 20,
+      "total_transactions": 3963,
+      "volume_percent": 7.93,
+      "fraud_count": 37,
+      "fraud_rate_percent": 0.93
+    },
+    {
+      "hour": 21,
+      "total_transactions": 3396,
+      "volume_percent": 6.79,
+      "fraud_count": 39,
+      "fraud_rate_percent": 1.15
+    },
+    {
+      "hour": 22,
+      "total_transactions": 2278,
+      "volume_percent": 4.56,
+      "fraud_count": 33,
+      "fraud_rate_percent": 1.45
+    },
+    {
+      "hour": 23,
+      "total_transactions": 1286,
+      "volume_percent": 2.57,
+      "fraud_count": 40,
+      "fraud_rate_percent": 3.11
+    }
+  ],
+  "monthly_distribution": [
+    {
+      "month": 1,
+      "total_transactions": 8661,
+      "volume_percent": 17.32,
+      "fraud_count": 97,
+      "fraud_rate_percent": 1.12
+    },
+    {
+      "month": 2,
+      "total_transactions": 8088,
+      "volume_percent": 16.18,
+      "fraud_count": 87,
+      "fraud_rate_percent": 1.08
+    },
+    {
+      "month": 3,
+      "total_transactions": 8509,
+      "volume_percent": 17.02,
+      "fraud_count": 100,
+      "fraud_rate_percent": 1.18
+    },
+    {
+      "month": 4,
+      "total_transactions": 8376,
+      "volume_percent": 16.75,
+      "fraud_count": 121,
+      "fraud_rate_percent": 1.44
+    },
+    {
+      "month": 5,
+      "total_transactions": 8650,
+      "volume_percent": 17.3,
+      "fraud_count": 97,
+      "fraud_rate_percent": 1.12
+    },
+    {
+      "month": 6,
+      "total_transactions": 7716,
+      "volume_percent": 15.43,
+      "fraud_count": 84,
+      "fraud_rate_percent": 1.09
+    }
+  ],
+  "transaction_type_distribution": [
+    {
+      "transaction_type": "P2M",
+      "total_transactions": 42280,
+      "volume_percent": 84.56,
+      "fraud_count": 259,
+      "fraud_rate_percent": 0.61
+    },
+    {
+      "transaction_type": "P2P",
+      "total_transactions": 7720,
+      "volume_percent": 15.44,
+      "fraud_count": 327,
+      "fraud_rate_percent": 4.24
+    }
+  ],
+  "merchant_category_distribution": [
+    {
+      "merchant_category": "kirana_groceries",
+      "total_transactions": 14078,
+      "volume_percent": 28.16,
+      "fraud_count": 24,
+      "fraud_rate_percent": 0.17
+    },
+    {
+      "merchant_category": "quick_commerce",
+      "total_transactions": 7908,
+      "volume_percent": 15.82,
+      "fraud_count": 28,
+      "fraud_rate_percent": 0.35
+    },
+    {
+      "merchant_category": "food_dining",
+      "total_transactions": 6963,
+      "volume_percent": 13.93,
+      "fraud_count": 26,
+      "fraud_rate_percent": 0.37
+    },
+    {
+      "merchant_category": "shopping_retail",
+      "total_transactions": 6510,
+      "volume_percent": 13.02,
+      "fraud_count": 142,
+      "fraud_rate_percent": 2.18
+    },
+    {
+      "merchant_category": "utility_bills",
+      "total_transactions": 4999,
+      "volume_percent": 10.0,
+      "fraud_count": 20,
+      "fraud_rate_percent": 0.4
+    },
+    {
+      "merchant_category": "travel_ticketing",
+      "total_transactions": 4020,
+      "volume_percent": 8.04,
+      "fraud_count": 26,
+      "fraud_rate_percent": 0.65
+    },
+    {
+      "merchant_category": "p2p_transfer",
+      "total_transactions": 4514,
+      "volume_percent": 9.03,
+      "fraud_count": 314,
+      "fraud_rate_percent": 6.96
+    },
+    {
+      "merchant_category": "entertainment",
+      "total_transactions": 1008,
+      "volume_percent": 2.02,
+      "fraud_count": 6,
+      "fraud_rate_percent": 0.6
+    }
+  ]
+}
