@@ -1284,6 +1284,15 @@ class FraudLensApiTestCase(unittest.TestCase):
     def test_43_education_database_persistence_and_isolation(self):
         """Verify education persistence in test DB and confirm real transactions.db remains isolated."""
         import sqlite3
+
+        real_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), "transactions.db")
+        initial_real_count = None
+        if os.path.exists(real_db):
+            with sqlite3.connect(real_db) as conn:
+                c = conn.cursor()
+                c.execute("SELECT COUNT(*) FROM transactions")
+                initial_real_count = c.fetchone()[0]
+
         res = self.client.post(
             "/api/predict",
             json={
@@ -1308,14 +1317,24 @@ class FraudLensApiTestCase(unittest.TestCase):
             self.assertEqual(row[1], "INR")
             self.assertEqual(row[2], "UPI")
 
-        # Check real DB isolation (must still have exactly 34 records)
-        real_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), "transactions.db")
-        if os.path.exists(real_db):
+        # Check real DB isolation (count must be unchanged and test record must not exist in real DB)
+        if os.path.exists(real_db) and initial_real_count is not None:
             with sqlite3.connect(real_db) as conn:
                 c = conn.cursor()
                 c.execute("SELECT COUNT(*) FROM transactions")
-                cnt = c.fetchone()[0]
-                self.assertEqual(cnt, 34, f"Real database was modified! Expected 34, got {cnt}")
+                current_real_count = c.fetchone()[0]
+                self.assertEqual(
+                    current_real_count,
+                    initial_real_count,
+                    f"Real database was modified! Expected {initial_real_count}, got {current_real_count}",
+                )
+                c.execute("SELECT COUNT(*) FROM transactions WHERE transaction_id = 'TXN-EDU-PERSIST-01'")
+                leak_count = c.fetchone()[0]
+                self.assertEqual(
+                    leak_count,
+                    0,
+                    f"Test record leaked into real database! Found {leak_count} occurrences.",
+                )
 
 
 if __name__ == "__main__":
