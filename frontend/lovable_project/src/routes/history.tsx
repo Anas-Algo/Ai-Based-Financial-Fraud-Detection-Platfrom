@@ -1,7 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertCircle, Database, History, Loader2, RefreshCw, Search } from "lucide-react";
+import {
+  AlertCircle,
+  Database,
+  History,
+  Loader2,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+} from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,8 +25,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PageHeader } from "@/components/PageHeader";
+import { StatusBadge } from "@/components/StatusBadge";
+import { RiskBadge } from "@/components/RiskBadge";
+import { EmptyState } from "@/components/EmptyState";
+import { LoadingState } from "@/components/LoadingState";
 import { transactionsQueryOptions } from "@/lib/api-queries";
-import { formatAmount, formatTimestamp, formatTransactionAmount } from "@/lib/demo-data";
+import { formatTimestamp, formatTransactionAmount } from "@/lib/demo-data";
 import { isApiConfigured, type ApiTransaction } from "@/lib/fraud-api";
 
 export const Route = createFileRoute("/history")({
@@ -43,7 +55,7 @@ export const Route = createFileRoute("/history")({
 
 const filters = ["All", "Legitimate", "Fraudulent"] as const;
 
-function HistoryPage() {
+export function HistoryPage() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<(typeof filters)[number]>("All");
 
@@ -77,8 +89,8 @@ function HistoryPage() {
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
       <PageHeader
-        title="Transaction History"
-        description="Searchable audit trail of transactions processed by the AI fraud detection pipeline."
+        title="Audit History & Logs"
+        description="Comprehensive immutable audit record of evaluated transactions, confidence metrics, and feature derivations."
       >
         <div className="flex items-center gap-2">
           <Button
@@ -86,204 +98,214 @@ function HistoryPage() {
             size="sm"
             onClick={() => refetch()}
             disabled={isFetching}
-            className="h-8 text-xs"
+            className="h-8 text-xs border-border bg-card hover:bg-elevated text-slate-300"
           >
-            <RefreshCw className={`size-3.5 mr-1 ${isFetching ? "animate-spin" : ""}`} />
-            Refresh
+            <RefreshCw className={`size-3.5 mr-1.5 ${isFetching ? "animate-spin" : ""}`} />
+            Refresh Log
           </Button>
         </div>
       </PageHeader>
 
       {!apiConfigured && (
-        <div className="rounded-xl border border-warning-border bg-warning-surface p-4 text-sm text-warning-foreground">
-          ML backend URL is not configured. Please set{" "}
-          <code className="font-mono">VITE_FLASK_API_URL</code> in your environment.
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs sm:text-sm text-amber-300">
+          ML backend URL is not configured. Set{" "}
+          <code className="font-mono bg-black/40 px-1 py-0.5 rounded text-amber-200">
+            VITE_FLASK_API_URL
+          </code>{" "}
+          in your environment.
         </div>
       )}
 
       {isError && (
-        <div className="flex items-center justify-between rounded-xl border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="size-4 shrink-0" />
+        <div className="flex items-center justify-between rounded-lg border border-red-500/30 bg-red-950/20 p-4 text-sm text-red-300">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="size-4 shrink-0 text-red-400" />
             <span>
-              Failed to load transaction audit log:{" "}
+              Failed to load transaction audit repository:{" "}
               {error instanceof Error ? error.message : "Unknown error"}
             </span>
           </div>
-          <Button variant="outline" size="sm" onClick={() => refetch()} className="text-xs">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetch()}
+            className="h-8 text-xs border-red-500/40 bg-red-950/40 hover:bg-red-900/30 text-red-200"
+          >
             Retry
           </Button>
         </div>
       )}
 
-      <Card className="shadow-card">
+      <Card className="border-border/80 bg-card shadow-card">
         <CardContent className="flex flex-col gap-4 p-5">
-          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-            <div className="grid min-w-0 gap-2">
-              <Label htmlFor="search">Search by ID, channel, or merchant</Label>
+          {/* Controls Bar */}
+          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_220px] sm:items-end">
+            <div className="grid min-w-0 gap-1.5">
+              <Label htmlFor="search" className="text-xs font-medium text-slate-300">
+                Filter by ID, channel, or merchant category
+              </Label>
               <div className="relative">
                 <Search
-                  className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                  className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
                   aria-hidden
                 />
                 <Input
                   id="search"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="e.g. TXN-100245 or Card"
-                  className="bg-card pl-9"
+                  placeholder="e.g. TXN-100245, UPI, or Kirana"
+                  className="bg-elevated/50 border-border text-foreground text-xs pl-8 placeholder:text-muted-foreground focus-visible:ring-primary"
                 />
               </div>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="status">Filter by Classification</Label>
+            <div className="grid gap-1.5">
+              <Label htmlFor="status" className="text-xs font-medium text-slate-300">
+                Filter by Verdict
+              </Label>
               <select
                 id="status"
                 value={filter}
                 onChange={(e) => setFilter(e.target.value as (typeof filters)[number])}
-                className="h-10 rounded-md border border-input bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="h-9 rounded-md border border-border bg-elevated/50 px-3 text-xs text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
                 {filters.map((f) => (
-                  <option key={f} value={f}>
-                    {f}
+                  <option key={f} value={f} className="bg-card text-foreground">
+                    {f} Transactions
                   </option>
                 ))}
               </select>
             </div>
           </div>
 
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <p>
-              Showing {rows.length} of {transactions.length} audit records.
-            </p>
+          {/* Counts pill & loading indicator */}
+          <div className="flex items-center justify-between text-xs text-muted-foreground pt-1 border-t border-border/40">
+            <span className="font-mono text-[11px]">
+              Showing <strong className="text-foreground">{rows.length}</strong> of{" "}
+              <strong className="text-foreground">{transactions.length}</strong> audited events
+            </span>
             {isFetching && (
-              <span className="flex items-center gap-1 text-primary">
-                <Loader2 className="size-3 animate-spin" /> Updating…
+              <span className="flex items-center gap-1.5 text-primary text-[11px] font-medium">
+                <Loader2 className="size-3 animate-spin" /> Syncing database…
               </span>
             )}
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Table */}
+          <div className="overflow-x-auto rounded-md border border-border/60">
             {isLoading ? (
-              <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
-                <Loader2 className="size-8 animate-spin text-primary" />
-                <p className="text-sm">Loading audit history from SQLite database…</p>
-              </div>
+              <LoadingState
+                message="Querying transaction audit records from SQLite…"
+                className="py-16"
+              />
             ) : transactions.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-3 py-16 text-center text-muted-foreground">
-                <Database className="size-10 opacity-30" />
-                <p className="text-base font-semibold text-foreground">
-                  No Transactions Analyzed Yet
-                </p>
-                <p className="max-w-md text-xs">
-                  The SQLite database is currently empty. Go to the Analyze page to submit a
-                  transaction and see its classification and audit log recorded here.
-                </p>
-                <Button asChild size="sm" className="mt-2">
-                  <Link to="/analyze">Analyze First Transaction</Link>
-                </Button>
-              </div>
+              <EmptyState
+                icon={Database}
+                title="Audit Database is Empty"
+                description="No transactions have been evaluated yet. Run an analysis to generate the first permanent audit record."
+                action={{
+                  label: "Analyze First Transaction",
+                  href: "/analyze",
+                }}
+                className="py-16"
+              />
             ) : (
               <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Transaction ID</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Channel</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Transaction / Analysis Time</TableHead>
-                    <TableHead>Model Prediction</TableHead>
-                    <TableHead>Fraud Probability</TableHead>
-                    <TableHead>Risk Level</TableHead>
+                <TableHeader className="bg-elevated/40">
+                  <TableRow className="border-b border-border/80 hover:bg-transparent">
+                    <TableHead className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider pl-4">
+                      Transaction ID
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      Amount
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      Channel
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      Category
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      Timestamp
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      Verdict
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      Fraud Prob.
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider pr-4">
+                      Risk Band
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rows.map((t) => (
-                    <TableRow key={t.transactionId}>
-                      <TableCell className="font-mono text-xs font-medium">
+                    <TableRow
+                      key={t.transactionId}
+                      className="border-b border-border/40 hover:bg-elevated/30 transition-colors"
+                    >
+                      <TableCell className="font-mono text-xs text-slate-300 font-medium pl-4">
                         {t.transactionId}
                       </TableCell>
                       <TableCell className="font-medium">
                         {(() => {
                           const formatted = formatTransactionAmount(t.amount, t.currency);
                           return (
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5">
-                              <span>{formatted.text}</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono text-xs text-foreground font-semibold">
+                                {formatted.text}
+                              </span>
                               {formatted.isLegacy && (
                                 <Badge
                                   variant="outline"
-                                  className="w-fit text-[9px] font-normal border-dashed text-muted-foreground"
+                                  className="text-[9px] font-normal border-border/60 text-muted-foreground bg-elevated/40 px-1 py-0"
                                 >
-                                  Legacy / Unspecified
+                                  Legacy
                                 </Badge>
                               )}
                             </div>
                           );
                         })()}
                       </TableCell>
-                      <TableCell className="text-xs">{t.channel}</TableCell>
-                      <TableCell className="text-xs capitalize">{t.merchantCategory}</TableCell>
+                      <TableCell>
+                        <span className="inline-flex items-center rounded px-2 py-0.5 text-xs font-mono font-medium bg-elevated/80 border border-border/60 text-slate-300">
+                          {t.channel}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-xs text-slate-300">
+                        {t.merchantCategory || "—"}
+                      </TableCell>
                       <TableCell className="text-xs">
                         {t.hasTransactionTime ? (
                           <div className="space-y-0.5">
-                            <div>
-                              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">
-                                Transaction Time
+                            <span className="font-medium text-foreground block">
+                              {formatTimestamp(t.timestamp)}
+                            </span>
+                            {t.createdAt && (
+                              <span className="text-[10px] text-muted-foreground font-mono block">
+                                Logged: {formatTimestamp(t.createdAt)}
                               </span>
-                              <span className="font-medium text-foreground">
-                                {formatTimestamp(t.timestamp)}
-                              </span>
-                            </div>
-                            {t.createdAt ? (
-                              <div>
-                                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">
-                                  Analyzed At
-                                </span>
-                                <span className="text-muted-foreground">
-                                  {formatTimestamp(t.createdAt)}
-                                </span>
-                              </div>
-                            ) : null}
+                            )}
                           </div>
                         ) : (
-                          <div className="space-y-0.5">
-                            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">
-                              Recorded / Analysis Time
-                            </span>
-                            <span className="text-foreground">{formatTimestamp(t.timestamp)}</span>
-                          </div>
+                          <span className="text-slate-300">{formatTimestamp(t.timestamp)}</span>
                         )}
                       </TableCell>
                       <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={
-                            t.label === "Fraudulent" || t.isFraud === 1
-                              ? "border-destructive/30 bg-destructive/10 text-destructive font-semibold"
-                              : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-semibold"
-                          }
-                        >
-                          {t.label}
-                        </Badge>
+                        <StatusBadge label={t.label} />
                       </TableCell>
-                      <TableCell className="text-xs font-mono">
+                      <TableCell className="text-xs font-mono font-medium text-slate-300">
                         {t.fraudProbability != null
                           ? `${(t.fraudProbability * 100).toFixed(1)}%`
                           : "N/A"}
                       </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            t.riskLevel === "High"
-                              ? "destructive"
-                              : t.riskLevel === "Medium"
-                                ? "outline"
-                                : "default"
+                      <TableCell className="pr-4">
+                        <RiskBadge
+                          level={
+                            t.riskLevel ||
+                            (t.label === "Fraudulent" || t.isFraud === 1 ? "High" : "Low")
                           }
-                          className="text-[10px] uppercase font-bold"
-                        >
-                          {t.riskLevel || "Low"}
-                        </Badge>
+                        />
                       </TableCell>
                     </TableRow>
                   ))}
@@ -291,9 +313,9 @@ function HistoryPage() {
                     <TableRow>
                       <TableCell
                         colSpan={8}
-                        className="py-10 text-center text-muted-foreground text-sm"
+                        className="py-12 text-center text-muted-foreground text-xs"
                       >
-                        No transactions match your current search and filter criteria.
+                        No audit events match your search and filter criteria.
                       </TableCell>
                     </TableRow>
                   )}

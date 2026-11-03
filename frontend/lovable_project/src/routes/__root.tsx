@@ -14,6 +14,7 @@ import { Menu } from "lucide-react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { AppSidebar, SidebarBrand, SidebarNav } from "../components/AppSidebar";
+import { AppHeader } from "../components/AppHeader";
 import { Toaster } from "../components/ui/sonner";
 
 function NotFoundComponent() {
@@ -110,11 +111,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <head>
         <HeadContent />
       </head>
-      <body>
+      <body className="min-h-screen bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary">
         {children}
         <Scripts />
       </body>
@@ -122,47 +123,32 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
-function MobileNav() {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="md:hidden">
-      <div className="flex items-center justify-between border-b border-border bg-sidebar">
-        <SidebarBrand />
-        <button
-          type="button"
-          aria-label="Toggle navigation"
-          aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
-          className="mr-4 grid size-10 place-items-center rounded-lg text-sidebar-foreground hover:bg-sidebar-accent"
-        >
-          <Menu className="size-5" aria-hidden />
-        </button>
-      </div>
-      {open ? (
-        <div className="border-b border-sidebar-border bg-sidebar">
-          <SidebarNav onNavigate={() => setOpen(false)} />
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   return (
     <QueryClientProvider client={queryClient}>
       <div className="flex min-h-screen bg-background">
         <AppSidebar />
         <div className="flex min-w-0 flex-1 flex-col">
-          <MobileNav />
+          {/* Top Header */}
+          <AppHeader onToggleMobileNav={() => setMobileNavOpen((v) => !v)} />
+
+          {/* Mobile Navigation Dropdown */}
+          {mobileNavOpen && (
+            <div className="md:hidden border-b border-sidebar-border bg-sidebar px-2 py-3">
+              <SidebarNav onNavigate={() => setMobileNavOpen(false)} />
+            </div>
+          )}
+
           <main className="min-w-0 flex-1 px-4 py-6 sm:px-8 sm:py-8">
             {/* Required: nested routes render here. */}
             <Outlet />
           </main>
         </div>
       </div>
-      <Toaster position="top-right" />
+      <Toaster position="top-right" theme="dark" />
     </QueryClientProvider>
   );
 }
