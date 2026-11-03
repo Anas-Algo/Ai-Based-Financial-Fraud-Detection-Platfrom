@@ -3,10 +3,10 @@
     "title": "FraudLens Indian UPI Model Chronological Out-of-Time Benchmark",
     "model_type": "Pipeline(ColumnTransformer + RandomForestClassifier)",
     "model_file": "fraudlens_india_pipeline.pkl",
-    "model_size_mb": 1.1782,
+    "model_size_mb": 1.17,
     "dataset_file": "synthetic_baseline_inr.csv",
     "currency": "INR",
-    "evaluation_timestamp": "2026-11-03T00:37:23.894733+05:30",
+    "evaluation_timestamp": "2026-11-03T14:46:58.937847+05:30",
     "partitioning_strategy": "Chronological Out-of-Time (80% Train, 20% Held-Out Test)",
     "evaluation_disclosure": "ACADEMIC SIMULATION NOTICE: All metrics evaluate discriminative performance on the synthetic Indian UPI transaction baseline. They do not represent live NPCI clearing network protection or verified commercial bank fraud detection."
   },
@@ -24,14 +24,14 @@
       "end": "2024-06-28T23:50:00.456102+05:30"
     },
     "train_class_distribution": {
-      "legitimate": 39519,
-      "fraudulent": 481,
-      "fraud_rate_percent": 1.2
+      "legitimate": 39513,
+      "fraudulent": 487,
+      "fraud_rate_percent": 1.22
     },
     "test_class_distribution": {
-      "legitimate": 9895,
-      "fraudulent": 105,
-      "fraud_rate_percent": 1.05
+      "legitimate": 9891,
+      "fraudulent": 109,
+      "fraud_rate_percent": 1.09
     }
   },
   "hyperparameters": {
@@ -44,16 +44,16 @@
   "metrics": {
     "decision_threshold": 0.5,
     "precision": 0.0653,
-    "recall": 0.4762,
-    "f1_score": 0.1148,
-    "pr_auc": 0.0708,
-    "roc_auc": 0.8061,
-    "false_positive_rate": 0.0724,
+    "recall": 0.4495,
+    "f1_score": 0.1141,
+    "pr_auc": 0.0924,
+    "roc_auc": 0.8128,
+    "false_positive_rate": 0.0709,
     "confusion_matrix": {
-      "true_negatives": 9179,
-      "false_positives": 716,
-      "false_negatives": 55,
-      "true_positives": 50
+      "true_negatives": 9190,
+      "false_positives": 701,
+      "false_negatives": 60,
+      "true_positives": 49
     }
   },
   "features_evaluated": [
@@ -65,5 +65,129 @@
     "transaction_month",
     "day_of_week",
     "is_weekend"
-  ]
+  ],
+  "education_performance_disclosure": {
+    "test_samples": 597,
+    "actual_fraud": 3,
+    "predicted_fraud": 12,
+    "true_positives": 0,
+    "false_positives": 12,
+    "false_negatives": 3,
+    "true_negatives": 582,
+    "precision": 0.0,
+    "recall": 0.0,
+    "reliability_notice": "STATISTICAL INSUFFICIENCY NOTICE: The held-out test split contains exactly 3 positive fraud examples for the Education category. These three positive instances are statistically insufficient to establish reliable Education-specific fraud detection performance. At the 0.50 decision threshold, the model flagged 12 transactions as fraudulent with 0 true positives and 3 false negatives (Recall: 0.0%, Precision: 0.0%). This zero-recall result is transparently disclosed and must not be minimized."
+  },
+  "model_comparison_qualification": {
+    "status": "Indicative only (Non-controlled comparison)",
+    "qualification_notice": "The baseline 8-category model and the active 9-category Education model were evaluated on different synthetic test transaction records resulting from generator re-sampling upon category addition (baseline test set contained 105 fraud cases; Education test set contains 109 fraud cases). A matching chronological cutoff timestamp alone does NOT constitute identical test data. Consequently, the observed PR-AUC increase (0.0924 vs. 0.0708 baseline) must NOT be presented as conclusive proof that the new model has superior discriminative capability. The comparison is strictly indicative, and zero regression across individual non-education transactions cannot be claimed.",
+    "identical_test_data": false,
+    "controlled_ab_comparison": false,
+    "zero_regression_claimed": false
+  },
+  "synthetic_assumptions": {
+    "education_synthetic_risk_weight": -0.5,
+    "synthetic_benchmark_notice": "In the synthetic Indian UPI baseline generator, the Education category is assigned an artificial latent risk weight of -0.50. This is purely an academic benchmark assumption and does NOT establish that real-world educational transactions or fee payments are safer or less vulnerable to fraud. All benchmark metrics quantify algorithmic behavior on synthetic stochastic data and do NOT represent validated commercial bank clearing or NPCI switch protection."
+  },
+  "category_performance": {
+    "education": {
+      "test_samples": 597,
+      "actual_fraud": 3,
+      "predicted_fraud": 12,
+      "true_positives": 0,
+      "false_positives": 12,
+      "false_negatives": 3,
+      "true_negatives": 582,
+      "precision": 0.0,
+      "recall": 0.0
+    },
+    "entertainment": {
+      "test_samples": 210,
+      "actual_fraud": 2,
+      "predicted_fraud": 0,
+      "true_positives": 0,
+      "false_positives": 0,
+      "false_negatives": 2,
+      "true_negatives": 208,
+      "precision": 0.0,
+      "recall": 0.0
+    },
+    "food_dining": {
+      "test_samples": 1243,
+      "actual_fraud": 9,
+      "predicted_fraud": 0,
+      "true_positives": 0,
+      "false_positives": 0,
+      "false_negatives": 9,
+      "true_negatives": 1234,
+      "precision": 0.0,
+      "recall": 0.0
+    },
+    "kirana_groceries": {
+      "test_samples": 2642,
+      "actual_fraud": 4,
+      "predicted_fraud": 0,
+      "true_positives": 0,
+      "false_positives": 0,
+      "false_negatives": 4,
+      "true_negatives": 2638,
+      "precision": 0.0,
+      "recall": 0.0
+    },
+    "p2p_transfer": {
+      "test_samples": 903,
+      "actual_fraud": 53,
+      "predicted_fraud": 591,
+      "true_positives": 44,
+      "false_positives": 547,
+      "false_negatives": 9,
+      "true_negatives": 303,
+      "precision": 0.0745,
+      "recall": 0.8302
+    },
+    "quick_commerce": {
+      "test_samples": 1499,
+      "actual_fraud": 7,
+      "predicted_fraud": 0,
+      "true_positives": 0,
+      "false_positives": 0,
+      "false_negatives": 7,
+      "true_negatives": 1492,
+      "precision": 0.0,
+      "recall": 0.0
+    },
+    "shopping_retail": {
+      "test_samples": 1190,
+      "actual_fraud": 21,
+      "predicted_fraud": 144,
+      "true_positives": 5,
+      "false_positives": 139,
+      "false_negatives": 16,
+      "true_negatives": 1030,
+      "precision": 0.0347,
+      "recall": 0.2381
+    },
+    "travel_ticketing": {
+      "test_samples": 822,
+      "actual_fraud": 8,
+      "predicted_fraud": 1,
+      "true_positives": 0,
+      "false_positives": 1,
+      "false_negatives": 8,
+      "true_negatives": 813,
+      "precision": 0.0,
+      "recall": 0.0
+    },
+    "utility_bills": {
+      "test_samples": 894,
+      "actual_fraud": 2,
+      "predicted_fraud": 2,
+      "true_positives": 0,
+      "false_positives": 2,
+      "false_negatives": 2,
+      "true_negatives": 890,
+      "precision": 0.0,
+      "recall": 0.0
+    }
+  }
 }

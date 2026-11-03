@@ -376,7 +376,7 @@ class FraudLensApiTestCase(unittest.TestCase):
         num_imputer = preprocessor.named_transformers_["numerical"].named_steps["imputer"]
         stats = num_imputer.statistics_
         # Expected features: ['amount', 'transaction_hour', 'transaction_day', 'transaction_month', 'day_of_week', 'is_weekend']
-        self.assertAlmostEqual(float(stats[0]), 473.185, places=1)  # amount median
+        self.assertAlmostEqual(float(stats[0]), 513.10, places=1)  # amount median
         self.assertEqual(float(stats[1]), 15.0)                    # transaction_hour median
         self.assertEqual(float(stats[2]), 15.0)                    # transaction_day median
         self.assertEqual(float(stats[3]), 3.0)                     # transaction_month median
@@ -402,7 +402,8 @@ class FraudLensApiTestCase(unittest.TestCase):
             "is_weekend": 0,
         }])
         transformed = preprocessor.transform(sample_df)
-        self.assertEqual(transformed.shape[1], 16)
+        # 9 merchant categories + 2 transaction types + 6 numericals = 17 transformed features
+        self.assertEqual(transformed.shape[1], 17)
         self.assertTrue(np.all(np.isfinite(transformed if isinstance(transformed, np.ndarray) else transformed.toarray())))
 
     def test_18_evaluation_report_dual_benchmark_verification(self):
@@ -726,7 +727,17 @@ class FraudLensApiTestCase(unittest.TestCase):
         res = explainer.explain(df)
         factor_features = [f["feature"] for f in res["factors"]]
 
-        valid_features = {"Amount", "Merchant Category", "Transaction Type", "Transaction Hour", "Transaction Day", "Transaction Month", "Day of Week", "Weekend"}
+        valid_features = {
+            "Amount",
+            "Merchant Category",
+            "Transaction Type",
+            "Transaction Hour",
+            "Transaction Day",
+            "Transaction Month",
+            "Day of Week",
+            "Weekend",
+            "Weekend Indicator",
+        }
         for f_name in factor_features:
             self.assertIn(f_name, valid_features)
             self.assertFalse(f_name.startswith("categorical__"))
@@ -1111,6 +1122,200 @@ class FraudLensApiTestCase(unittest.TestCase):
         )
         self.assertEqual(res.status_code, 400)
         self.assertIn("invalid or unsupported merchant category", res.get_json()["error"].lower())
+
+    def test_35_education_valid_p2m_transaction(self):
+        """Verify valid education P2M transaction prediction and response structure."""
+        payload = {
+            "transactionId": "TXN-EDU-P2M-01",
+            "amount": 4500.0,
+            "currency": "INR",
+            "channel": "UPI",
+            "transactionType": "P2M",
+            "merchantCategory": "Education",
+            "country": "India",
+        }
+        res = self.client.post("/api/predict", json=payload)
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertEqual(data["currency"], "INR")
+        self.assertIn(data["prediction"], ["Legitimate", "Fraudulent"])
+        self.assertIn(data["risk_level"], ["Low", "Medium", "High"])
+        self.assertTrue(0.0 <= data["fraud_probability"] <= 1.0)
+        self.assertTrue(0.0 <= data["confidence"] <= 1.0)
+        self.assertIn("explanations", data)
+
+    def test_36_education_category_normalization(self):
+        """Verify that various education aliases normalize to canonical education."""
+        aliases = [
+            "School Fees",
+            "College Fees",
+            "Coaching Fees",
+            "Tuition",
+            "Online Course",
+            "Books & Stationery",
+            "educational books",
+            "edtech",
+        ]
+        for alias in aliases:
+            res = self.client.post(
+                "/api/predict",
+                json={
+                    "transactionId": f"TXN-ALIAS-{alias[:6]}",
+                    "amount": 1200.0,
+                    "currency": "INR",
+                    "channel": "UPI",
+                    "transactionType": "P2M",
+                    "merchantCategory": alias,
+                    "country": "India",
+                },
+            )
+            self.assertEqual(res.status_code, 200, f"Alias '{alias}' failed with status {res.status_code}")
+            data = res.get_json()
+            self.assertEqual(data["currency"], "INR")
+
+    def test_37_invalid_education_alias_rejection(self):
+        """Verify unsupported or invalid education variants return HTTP 400."""
+        invalid_aliases = [
+            "education_xyz_unknown",
+            "rocket_science_academy_secret",
+            "flying_school_unsupported",
+        ]
+        for inv in invalid_aliases:
+            res = self.client.post(
+                "/api/predict",
+                json={
+                    "amount": 2000.0,
+                    "currency": "INR",
+                    "transactionType": "P2M",
+                    "merchantCategory": inv,
+                },
+            )
+            self.assertEqual(res.status_code, 400)
+            self.assertIn("invalid or unsupported merchant category", res.get_json()["error"].lower())
+
+    def test_38_education_prediction_using_trained_model(self):
+        """Verify direct in-memory model inference on education category without warnings."""
+        import pandas as pd
+        input_df = pd.DataFrame([{
+            "merchant_category": "education",
+            "transaction_type": "P2M",
+            "amount": 5500.0,
+            "transaction_hour": 14,
+            "transaction_day": 10,
+            "transaction_month": 4,
+            "day_of_week": 2,
+            "is_weekend": 0,
+        }])
+        pred = model.predict(input_df)
+        probs = model.predict_proba(input_df)
+        self.assertIn(int(pred[0]), [0, 1])
+        self.assertEqual(len(probs[0]), 2)
+        self.assertAlmostEqual(float(probs[0].sum()), 1.0, places=5)
+
+    def test_39_education_in_fitted_onehot_encoder_categories(self):
+        """Verify that 'education' is present in the fitted OneHotEncoder categories."""
+        encoder = model.named_steps["preprocessor"].named_transformers_["categorical"].named_steps["encoder"]
+        cat_classes = list(encoder.categories_[0])
+        self.assertIn("education", cat_classes)
+        self.assertEqual(len(cat_classes), 9, f"Expected 9 categories, got {len(cat_classes)}: {cat_classes}")
+
+    def test_40_existing_categories_still_accepted(self):
+        """Verify that all 8 original categories continue to be accepted and evaluated."""
+        original_categories = [
+            "Kirana & Groceries",
+            "Quick Commerce",
+            "Food & Dining",
+            "Shopping & Retail",
+            "Bill Payments & Utilities",
+            "Travel & Ticketing",
+            "Peer-to-Peer Transfer",
+            "Entertainment",
+        ]
+        for cat in original_categories:
+            tx_type = "P2P" if "Peer" in cat else "P2M"
+            res = self.client.post(
+                "/api/predict",
+                json={
+                    "amount": 750.0,
+                    "currency": "INR",
+                    "channel": "UPI",
+                    "transactionType": tx_type,
+                    "merchantCategory": cat,
+                    "country": "India",
+                },
+            )
+            self.assertEqual(res.status_code, 200, f"Category '{cat}' failed with status {res.status_code}")
+
+    def test_41_education_inr_validation_enforced(self):
+        """Verify that education transactions still strictly require INR currency."""
+        res = self.client.post(
+            "/api/predict",
+            json={
+                "amount": 5000.0,
+                "currency": "USD",
+                "channel": "Card",
+                "transactionType": "P2M",
+                "merchantCategory": "Education",
+            },
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("unsupported currency", res.get_json()["error"].lower())
+
+    def test_42_education_p2p_and_p2m_and_channels(self):
+        """Verify that education accepts both P2M/P2P and preserves standard payment channels."""
+        channels = ["UPI", "Card", "Transfer", "Wallet", "ATM"]
+        for ch in channels:
+            for t_type in ["P2M", "P2P"]:
+                res = self.client.post(
+                    "/api/predict",
+                    json={
+                        "amount": 2500.0,
+                        "currency": "INR",
+                        "channel": ch,
+                        "transactionType": t_type,
+                        "merchantCategory": "Education",
+                        "country": "India",
+                    },
+                )
+                self.assertEqual(res.status_code, 200)
+                data = res.get_json()
+                self.assertEqual(data["channel"], ch)
+
+    def test_43_education_database_persistence_and_isolation(self):
+        """Verify education persistence in test DB and confirm real transactions.db remains isolated."""
+        import sqlite3
+        res = self.client.post(
+            "/api/predict",
+            json={
+                "transactionId": "TXN-EDU-PERSIST-01",
+                "amount": 8000.0,
+                "currency": "INR",
+                "channel": "UPI",
+                "transactionType": "P2M",
+                "merchantCategory": "Education",
+                "country": "India",
+            },
+        )
+        self.assertEqual(res.status_code, 200)
+
+        # Check test DB
+        with sqlite3.connect(self.test_db_path) as conn:
+            c = conn.cursor()
+            c.execute("SELECT amount, currency, channel FROM transactions WHERE transaction_id = 'TXN-EDU-PERSIST-01'")
+            row = c.fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(row[0], 8000.0)
+            self.assertEqual(row[1], "INR")
+            self.assertEqual(row[2], "UPI")
+
+        # Check real DB isolation (must still have exactly 34 records)
+        real_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), "transactions.db")
+        if os.path.exists(real_db):
+            with sqlite3.connect(real_db) as conn:
+                c = conn.cursor()
+                c.execute("SELECT COUNT(*) FROM transactions")
+                cnt = c.fetchone()[0]
+                self.assertEqual(cnt, 34, f"Real database was modified! Expected 34, got {cnt}")
 
 
 if __name__ == "__main__":

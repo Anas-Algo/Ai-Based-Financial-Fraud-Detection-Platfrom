@@ -36,13 +36,14 @@ Methodology & Statistical Assumptions:
    - P2P (Peer-to-Peer): ~15.4% of volume (personal transfers, small vendor QR payments).
 
 4. Retail Merchant Categories & Amount Distributions (INR):
-   - kirana_groceries: ~28% (log-normal, median ~Rs 270, range Rs 10 - Rs 5,000)
-   - quick_commerce: ~16% (log-normal, median ~Rs 380, range Rs 50 - Rs 6,000)
-   - food_dining: ~14% (log-normal, median ~Rs 420, range Rs 50 - Rs 8,000)
-   - shopping_retail: ~13% (log-normal, median ~Rs 1,400, range Rs 100 - Rs 50,000)
-   - utility_bills: ~10% (log-normal, median ~Rs 810, range Rs 50 - Rs 20,000)
+   - kirana_groceries: ~26% (log-normal, median ~Rs 270, range Rs 10 - Rs 5,000)
+   - quick_commerce: ~15% (log-normal, median ~Rs 380, range Rs 50 - Rs 6,000)
+   - food_dining: ~13% (log-normal, median ~Rs 420, range Rs 50 - Rs 8,000)
+   - shopping_retail: ~12% (log-normal, median ~Rs 1,400, range Rs 100 - Rs 50,000)
+   - utility_bills: ~9% (log-normal, median ~Rs 810, range Rs 50 - Rs 20,000)
    - travel_ticketing: ~8% (log-normal, median ~Rs 600, range Rs 30 - Rs 30,000)
    - p2p_transfer: ~9% (log-normal, median ~Rs 2,000, range Rs 50 - Rs 100,000)
+   - education: ~6% (log-normal, median ~Rs 2,500, range Rs 50 - Rs 150,000; covers school/college/university fees, coaching/tuition, online courses, books/stationery)
    - entertainment: ~2% (log-normal, median ~Rs 445, range Rs 100 - Rs 10,000)
 
 5. Stochastic Fraud Modeling:
@@ -51,7 +52,7 @@ Methodology & Statistical Assumptions:
        z = beta_0 + beta_amt * (log10(amt) - 2.5) + f(hour) + f(category) + f(type) + interaction + noise
      where noise ~ N(0, 0.65^2) and P(fraud) = sigmoid(z).
    - Labels are sampled via Bernoulli trials: y ~ Bernoulli(P(fraud)).
-   - Base intercept beta_0 = -5.25 calibrates unconditional fraud prevalence to ~1.17% (586 / 50,000),
+   - Base intercept beta_0 = -5.25 calibrates unconditional fraud prevalence to ~1.19% (~596 / 50,000),
      offsetting the negative daytime density shift from the non-uniform diurnal arrival distribution.
    - This ensures probabilistic realism: high amounts are not automatically fraudulent,
      and modest amounts during off-hours can occasionally be fraudulent.
@@ -79,11 +80,12 @@ CATEGORIES = [
     "utility_bills",
     "travel_ticketing",
     "p2p_transfer",
+    "education",
     "entertainment",
 ]
 
 # Category probabilities summing to 1.0
-CATEGORY_PROBS = [0.28, 0.16, 0.14, 0.13, 0.10, 0.08, 0.09, 0.02]
+CATEGORY_PROBS = [0.26, 0.15, 0.13, 0.12, 0.09, 0.08, 0.09, 0.06, 0.02]
 
 # Category-specific log-normal amount parameters (mu, sigma, min_val, max_val in INR)
 AMOUNT_PARAMS = {
@@ -94,6 +96,7 @@ AMOUNT_PARAMS = {
     "utility_bills": (6.70, 0.90, 50.0, 20000.0),        # median ~Rs 810
     "travel_ticketing": (6.40, 0.95, 30.0, 30000.0),     # median ~Rs 600
     "p2p_transfer": (7.60, 1.25, 50.0, 100000.0),        # median ~Rs 2000
+    "education": (7.80, 1.15, 50.0, 150000.0),           # median ~Rs 2500 (fees, courses, stationery)
     "entertainment": (6.10, 0.70, 100.0, 10000.0),       # median ~Rs 445
 }
 
@@ -193,13 +196,15 @@ def generate_synthetic_data(
     categories = [CATEGORIES[i] for i in category_indices]
 
     # 3. Assign Transaction Type (P2P vs P2M)
-    # p2p_transfer is strictly P2P; kirana and food have 15% P2P QR vendors; others are P2M
+    # p2p_transfer is strictly P2P; kirana/food have 15% P2P QR vendors; education has 10% P2P tutors; others are P2M
     types = []
     for cat in categories:
         if cat == "p2p_transfer":
             types.append("P2P")
         elif cat in ("kirana_groceries", "food_dining"):
             types.append("P2P" if rng.random() < 0.15 else "P2M")
+        elif cat == "education":
+            types.append("P2P" if rng.random() < 0.10 else "P2M")
         else:
             types.append("P2M")
 
@@ -229,6 +234,7 @@ def generate_synthetic_data(
     category_risk_map = {
         "kirana_groceries": -0.90,     # Very safe daily micro-purchases
         "utility_bills": -0.80,        # Trusted recurring billers
+        "education": -0.50,            # Institutional fee payments with occasional coaching/edtech scams
         "quick_commerce": -0.40,       # Regular fast retail
         "food_dining": -0.30,          # Standard consumer dining
         "travel_ticketing": 0.35,      # Occasional unauthorized ticket booking

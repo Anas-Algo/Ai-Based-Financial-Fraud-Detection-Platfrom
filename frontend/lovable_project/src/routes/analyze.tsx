@@ -77,6 +77,7 @@ const merchantCategories = [
   "Bill Payments & Utilities",
   "Travel & Ticketing",
   "Peer-to-Peer Transfer",
+  "Education",
   "Entertainment",
 ];
 
@@ -305,6 +306,10 @@ function AnalyzePage() {
                     {errors.merchantCategory ? (
                       <p id="merchantCategory-error" className="text-xs text-destructive">
                         {errors.merchantCategory}
+                      </p>
+                    ) : form.merchantCategory === "Education" ? (
+                      <p className="text-[11px] text-muted-foreground">
+                        School fees, college fees, coaching, online courses, books and stationery.
                       </p>
                     ) : null}
                   </div>

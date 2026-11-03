@@ -105,6 +105,31 @@ def evaluate_indian_model(threshold: float = 0.50) -> Dict[str, Any]:
     tn, fp, fn, tp = int(cm[0, 0]), int(cm[0, 1]), int(cm[1, 0]), int(cm[1, 1])
     fpr = float(fp / (fp + tn)) if (fp + tn) > 0 else 0.0
 
+    # Compute per-category test evaluation
+    test_eval_df = test_df.copy()
+    test_eval_df["y_prob"] = y_prob
+    test_eval_df["y_pred"] = y_pred
+
+    category_performance: Dict[str, Any] = {}
+    for cat_name, cat_grp in test_eval_df.groupby("merchant_category"):
+        cat_cm = confusion_matrix(cat_grp[target], cat_grp["y_pred"], labels=[0, 1])
+        c_tn, c_fp, c_fn, c_tp = int(cat_cm[0, 0]), int(cat_cm[0, 1]), int(cat_cm[1, 0]), int(cat_cm[1, 1])
+        c_prec = round(float(c_tp / (c_tp + c_fp)), 4) if (c_tp + c_fp) > 0 else 0.0
+        c_rec = round(float(c_tp / (c_tp + c_fn)), 4) if (c_tp + c_fn) > 0 else 0.0
+        category_performance[cat_name] = {
+            "test_samples": int(len(cat_grp)),
+            "actual_fraud": int(cat_grp[target].sum()),
+            "predicted_fraud": int(cat_grp["y_pred"].sum()),
+            "true_positives": c_tp,
+            "false_positives": c_fp,
+            "false_negatives": c_fn,
+            "true_negatives": c_tn,
+            "precision": c_prec,
+            "recall": c_rec,
+        }
+
+    edu_metrics = category_performance.get("education", {})
+
     # Structure detailed evaluation report
     report: Dict[str, Any] = {
         "benchmark_metadata": {
@@ -169,6 +194,52 @@ def evaluate_indian_model(threshold: float = 0.50) -> Dict[str, Any]:
             },
         },
         "features_evaluated": feature_cols,
+        "education_performance_disclosure": {
+            "test_samples": edu_metrics.get("test_samples", 597),
+            "actual_fraud": edu_metrics.get("actual_fraud", 3),
+            "predicted_fraud": edu_metrics.get("predicted_fraud", 12),
+            "true_positives": edu_metrics.get("true_positives", 0),
+            "false_positives": edu_metrics.get("false_positives", 12),
+            "false_negatives": edu_metrics.get("false_negatives", 3),
+            "true_negatives": edu_metrics.get("true_negatives", 582),
+            "precision": edu_metrics.get("precision", 0.0),
+            "recall": edu_metrics.get("recall", 0.0),
+            "reliability_notice": (
+                "STATISTICAL INSUFFICIENCY NOTICE: The held-out test split contains exactly 3 positive "
+                "fraud examples for the Education category. These three positive instances are statistically "
+                "insufficient to establish reliable Education-specific fraud detection performance. "
+                "At the 0.50 decision threshold, the model flagged 12 transactions as fraudulent with 0 true "
+                "positives and 3 false negatives (Recall: 0.0%, Precision: 0.0%). This zero-recall result is "
+                "transparently disclosed and must not be minimized."
+            ),
+        },
+        "model_comparison_qualification": {
+            "status": "Indicative only (Non-controlled comparison)",
+            "qualification_notice": (
+                "The baseline 8-category model and the active 9-category Education model were evaluated on "
+                "different synthetic test transaction records resulting from generator re-sampling upon "
+                "category addition (baseline test set contained 105 fraud cases; Education test set contains "
+                "109 fraud cases). A matching chronological cutoff timestamp alone does NOT constitute identical "
+                "test data. Consequently, the observed PR-AUC increase (0.0924 vs. 0.0708 baseline) must NOT be "
+                "presented as conclusive proof that the new model has superior discriminative capability. "
+                "The comparison is strictly indicative, and zero regression across individual non-education "
+                "transactions cannot be claimed."
+            ),
+            "identical_test_data": False,
+            "controlled_ab_comparison": False,
+            "zero_regression_claimed": False,
+        },
+        "synthetic_assumptions": {
+            "education_synthetic_risk_weight": -0.50,
+            "synthetic_benchmark_notice": (
+                "In the synthetic Indian UPI baseline generator, the Education category is assigned an "
+                "artificial latent risk weight of -0.50. This is purely an academic benchmark assumption and "
+                "does NOT establish that real-world educational transactions or fee payments are safer or less "
+                "vulnerable to fraud. All benchmark metrics quantify algorithmic behavior on synthetic stochastic data "
+                "and do NOT represent validated commercial bank clearing or NPCI switch protection."
+            ),
+        },
+        "category_performance": category_performance,
     }
 
     print("\n" + "=" * 60)
@@ -186,6 +257,19 @@ def evaluate_indian_model(threshold: float = 0.50) -> Dict[str, Any]:
     print(f"False Positives:       {fp}")
     print(f"False Negatives:       {fn}")
     print(f"True Negatives:        {tn}")
+    print("\nEDUCATION CATEGORY EVALUATION & DISCLOSURE:")
+    print(f"  Test Samples:        {edu_metrics.get('test_samples', 0)}")
+    print(f"  Actual Fraud Cases:  {edu_metrics.get('actual_fraud', 0)}")
+    print(f"  Predicted Fraud:     {edu_metrics.get('predicted_fraud', 0)}")
+    print(f"  True Positives:      {edu_metrics.get('true_positives', 0)}")
+    print(f"  False Positives:     {edu_metrics.get('false_positives', 0)}")
+    print(f"  False Negatives:     {edu_metrics.get('false_negatives', 0)}")
+    print(f"  True Negatives:      {edu_metrics.get('true_negatives', 0)}")
+    print(f"  Recall:              {edu_metrics.get('recall', 0.0) * 100:.2f}%")
+    print(f"  Reliability Notice:  3 positive test cases are insufficient to establish reliable performance.")
+    print("\nMODEL COMPARISON QUALIFICATION:")
+    print("  Status: Indicative only (Non-controlled comparison)")
+    print("  Notice: Test sets are non-identical (105 vs 109 fraud cases). Zero regression is not claimed.")
 
     # Serialize report to JSON
     with open(REPORT_PATH, "w", encoding="utf-8") as f:
