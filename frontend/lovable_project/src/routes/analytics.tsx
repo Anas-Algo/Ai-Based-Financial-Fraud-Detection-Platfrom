@@ -295,9 +295,14 @@ function AnalyticsPage() {
           {/* Amount Bands */}
           <Card className="shadow-card">
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-base">Transaction Amount Distribution (USD)</CardTitle>
+              <CardTitle className="text-base">
+                Transaction Amount Distribution ({analytics?.amountBandsCurrency || "INR"})
+              </CardTitle>
               <Badge variant="outline" className="text-xs font-normal">
-                {getBadgeText("USD Denominated", "Sample Bands")}
+                {getBadgeText(
+                  `${analytics?.amountBandsCurrency || "INR"} Denominated`,
+                  "Sample Bands",
+                )}
               </Badge>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -315,7 +320,7 @@ function AnalyticsPage() {
                       <Tooltip contentStyle={tooltipStyle} />
                       <Bar
                         dataKey="count"
-                        name="USD Transactions"
+                        name={`${analytics?.amountBandsCurrency || "INR"} Transactions`}
                         fill="var(--chart-5)"
                         radius={[6, 6, 0, 0]}
                       />
@@ -324,15 +329,20 @@ function AnalyticsPage() {
                 ) : (
                   <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center text-muted-foreground">
                     <Activity className="size-8 opacity-40" />
-                    <p className="text-sm font-medium">No USD transactions recorded yet.</p>
+                    <p className="text-sm font-medium">
+                      No {analytics?.amountBandsCurrency || "INR"} transactions recorded yet.
+                    </p>
                     {isLiveMode && (analytics?.unspecifiedAmountTotal ?? 0) > 0 ? (
                       <p className="max-w-xs text-xs">
                         The database contains {analytics?.unspecifiedAmountTotal} historical record
-                        {analytics?.unspecifiedAmountTotal === 1 ? "" : "s"} with unspecified legacy
-                        currency, segregated to preserve distribution validity.
+                        {analytics?.unspecifiedAmountTotal === 1 ? "" : "s"} with segregated
+                        currencies, preserved to prevent cross-currency distortion.
                       </p>
                     ) : (
-                      <p className="text-xs">New USD transactions will be plotted here.</p>
+                      <p className="text-xs">
+                        New {analytics?.amountBandsCurrency || "INR"} transactions will be plotted
+                        here.
+                      </p>
                     )}
                   </div>
                 )}
@@ -341,8 +351,8 @@ function AnalyticsPage() {
                 <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5 text-[11px] text-muted-foreground leading-normal">
                   <span className="font-semibold text-foreground">Currency Disclosure:</span>{" "}
                   {analytics?.amountBandsDisclosure ||
-                    "Amount distribution aggregates transactions denominated in US Dollars (USD). Historical records created prior to currency standardization have unspecified currency units and are segregated."}{" "}
-                  ({analytics?.unspecifiedAmountTotal} legacy record
+                    "Amount distribution aggregates transactions denominated in Indian Rupees (INR). Historical records in other currencies are segregated."}{" "}
+                  ({analytics?.unspecifiedAmountTotal} record
                   {(analytics?.unspecifiedAmountTotal ?? 0) > 1 ? "s" : ""} segregated).
                 </div>
               ) : null}

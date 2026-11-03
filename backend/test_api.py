@@ -80,13 +80,14 @@ class FraudLensApiTestCase(unittest.TestCase):
         self.assertIn("greater than zero", res_neg.get_json()["error"].lower())
 
     def test_06_predict_valid_legitimate_transaction(self):
-        """Verify valid transaction prediction and normalization."""
+        """Verify valid transaction prediction and normalization for Indian UPI model."""
         payload = {
             "transactionId": "TXN-UNIT-LEGIT-01",
-            "amount": 45.50,
-            "currency": "USD",
-            "channel": "Card",
-            "merchantCategory": "Groceries",
+            "amount": 250.00,
+            "currency": "INR",
+            "channel": "UPI",
+            "transactionType": "P2M",
+            "merchantCategory": "Kirana & Groceries",
             "country": "India",
             "hoursSincePrevTxn": 12.0,
         }
@@ -98,6 +99,7 @@ class FraudLensApiTestCase(unittest.TestCase):
         self.assertEqual(data["prediction"], "Legitimate")
         self.assertEqual(data["label"], "Legitimate")
         self.assertEqual(data["is_fraud"], 0)
+        self.assertEqual(data["currency"], "INR")
         self.assertIsInstance(data["amount"], float)
 
         # Check bounds: 0 <= fraud_probability <= 1
@@ -112,20 +114,16 @@ class FraudLensApiTestCase(unittest.TestCase):
         self.assertIn(data["risk_level"], ["Low", "Medium", "High"])
 
     def test_07_predict_valid_fraud_transaction(self):
-        """Verify prediction for a suspicious high-risk pattern."""
+        """Verify prediction for a suspicious high-risk Indian UPI pattern."""
         payload = {
             "transactionId": "TXN-UNIT-FRAUD-01",
-            "amount": 281.06,
-            "currency": "USD",
-            "channel": "Card",
-            "merchantCategory": "grocery_pos",
-            "gender": "M",
-            "lat": 35.9946,
-            "long": -81.7266,
-            "city_pop": 885,
-            "merch_lat": 36.430124,
-            "merch_long": -81.179483,
-            "trans_date_trans_time": "2019-01-02 01:06:37",
+            "amount": 85000.0,
+            "currency": "INR",
+            "channel": "UPI",
+            "transactionType": "P2P",
+            "merchantCategory": "Peer-to-Peer Transfer",
+            "country": "India",
+            "trans_date_trans_time": "2024-03-15 02:30:00",
         }
         response = self.client.post("/api/predict", json=payload)
         self.assertEqual(response.status_code, 200)
@@ -228,23 +226,24 @@ class FraudLensApiTestCase(unittest.TestCase):
         """Verify historical payment timestamp is distinguished from analysis time."""
         payload = {
             "transactionId": "TXN-HISTORICAL-01",
-            "amount": 180.0,
-            "currency": "USD",
-            "channel": "Card",
-            "merchantCategory": "shopping_net",
-            "transactionTime": "2019-01-02 01:06:37",
+            "amount": 1800.0,
+            "currency": "INR",
+            "channel": "UPI",
+            "transactionType": "P2M",
+            "merchantCategory": "Shopping & Retail",
+            "transactionTime": "2024-01-02 01:06:37",
         }
         res = self.client.post("/api/predict", json=payload)
         self.assertEqual(res.status_code, 200)
         data = res.get_json()
 
         self.assertEqual(data["transactionId"], "TXN-HISTORICAL-01")
-        self.assertEqual(data["timestamp"], "2019-01-02 01:06:37")
-        self.assertEqual(data["transactionTime"], "2019-01-02 01:06:37")
+        self.assertEqual(data["timestamp"], "2024-01-02 01:06:37")
+        self.assertEqual(data["transactionTime"], "2024-01-02 01:06:37")
         self.assertTrue(data["hasTransactionTime"])
         self.assertIn("createdAt", data)
-        # Analysis time is contemporary (not 2019)
-        self.assertNotIn("2019", data["createdAt"])
+        # Analysis time is contemporary (not 2024-01-02)
+        self.assertNotIn("2024-01-02", data["createdAt"])
 
         # Check /api/transactions persistence
         hist_res = self.client.get("/api/transactions")
@@ -252,17 +251,18 @@ class FraudLensApiTestCase(unittest.TestCase):
         txns = hist_res.get_json()["transactions"]
         match = next((t for t in txns if t["transactionId"] == "TXN-HISTORICAL-01"), None)
         self.assertIsNotNone(match)
-        self.assertEqual(match["timestamp"], "2019-01-02 01:06:37")
+        self.assertEqual(match["timestamp"], "2024-01-02 01:06:37")
         self.assertTrue(match["hasTransactionTime"])
 
     def test_14_manually_submitted_transaction_missing_timestamp(self):
         """Verify transaction submitted without payment time is marked as analysis time."""
         payload = {
             "transactionId": "TXN-MANUAL-NO-TIME-01",
-            "amount": 95.0,
-            "currency": "USD",
+            "amount": 950.0,
+            "currency": "INR",
             "channel": "UPI",
-            "merchantCategory": "Groceries",
+            "transactionType": "P2M",
+            "merchantCategory": "Kirana & Groceries",
             "country": "India",
         }
         res = self.client.post("/api/predict", json=payload)
@@ -283,13 +283,14 @@ class FraudLensApiTestCase(unittest.TestCase):
         self.assertFalse(match["hasTransactionTime"])
 
     def test_15_imputation_handles_missing_uncollected_features(self):
-        """Verify that missing uncollected features (gender, lat, long, etc.) produce valid finite predictions."""
+        """Verify that standard Indian UPI inputs produce valid finite predictions and response structure."""
         payload = {
             "transactionId": "TXN-IMPUTE-TEST-01",
-            "amount": 125.75,
-            "currency": "USD",
+            "amount": 1250.75,
+            "currency": "INR",
             "channel": "UPI",
-            "merchantCategory": "Restaurants",
+            "transactionType": "P2M",
+            "merchantCategory": "Food & Dining",
             "country": "India",
         }
         res = self.client.post("/api/predict", json=payload)
@@ -332,66 +333,76 @@ class FraudLensApiTestCase(unittest.TestCase):
         for field in expected_fields:
             self.assertIn(field, data, f"Missing required response field: {field}")
 
-    def test_16_imputation_handles_explicit_demographic_and_geographic_inputs(self):
-        """Verify that explicit inputs for uncollected features are accepted and processed when provided."""
-        payload = {
-            "transactionId": "TXN-EXPLICIT-COORDS-01",
-            "amount": 75.0,
-            "currency": "USD",
-            "channel": "Card",
-            "merchantCategory": "Entertainment",
-            "gender": "F",
-            "lat": 40.7128,
-            "long": -74.0060,
-            "city_pop": 8000000,
-            "merch_lat": 40.7130,
-            "merch_long": -74.0065,
-        }
-        res = self.client.post("/api/predict", json=payload)
-        self.assertEqual(res.status_code, 200)
-        data = res.get_json()
+    def test_16_predict_p2p_and_p2m_transactions(self):
+        """Verify both P2P and P2M transaction types are accepted and processed."""
+        # P2P
+        res_p2p = self.client.post(
+            "/api/predict",
+            json={
+                "transactionId": "TXN-TYPE-P2P-01",
+                "amount": 500.0,
+                "currency": "INR",
+                "channel": "UPI",
+                "transactionType": "P2P",
+                "merchantCategory": "Peer-to-Peer Transfer",
+            },
+        )
+        self.assertEqual(res_p2p.status_code, 200)
+        data_p2p = res_p2p.get_json()
+        self.assertTrue(math.isfinite(data_p2p["fraud_probability"]))
 
-        self.assertEqual(data["transactionId"], "TXN-EXPLICIT-COORDS-01")
-        self.assertTrue(math.isfinite(data["fraud_probability"]))
-        self.assertTrue(math.isfinite(data["confidence"]))
+        # P2M
+        res_p2m = self.client.post(
+            "/api/predict",
+            json={
+                "transactionId": "TXN-TYPE-P2M-01",
+                "amount": 500.0,
+                "currency": "INR",
+                "channel": "UPI",
+                "transactionType": "P2M",
+                "merchantCategory": "Quick Commerce",
+            },
+        )
+        self.assertEqual(res_p2m.status_code, 200)
+        data_p2m = res_p2m.get_json()
+        self.assertTrue(math.isfinite(data_p2m["fraud_probability"]))
 
     def test_17_pipeline_fitted_imputer_statistics(self):
-        """Verify the pipeline's actual SimpleImputer statistics match dataset learned medians and modes."""
+        """Verify the Indian pipeline's actual SimpleImputer statistics match dataset learned medians and modes."""
         self.assertIsNotNone(model, "Model pipeline should be loaded")
         preprocessor = model.named_steps["preprocessor"]
 
         # 1. Numerical imputer verification
         num_imputer = preprocessor.named_transformers_["numerical"].named_steps["imputer"]
         stats = num_imputer.statistics_
-        # Expected features: ['amt', 'lat', 'long', 'city_pop', 'merch_lat', 'merch_long', 'transaction_hour', 'transaction_day', 'transaction_month']
-        self.assertAlmostEqual(float(stats[1]), 39.3543, places=3)   # lat
-        self.assertAlmostEqual(float(stats[2]), -87.4769, places=3)  # long
-        self.assertEqual(float(stats[3]), 2456.0)                   # city_pop
-        self.assertAlmostEqual(float(stats[4]), 39.3705, places=3)   # merch_lat
-        self.assertAlmostEqual(float(stats[5]), -87.4411, places=3)  # merch_long
+        # Expected features: ['amount', 'transaction_hour', 'transaction_day', 'transaction_month', 'day_of_week', 'is_weekend']
+        self.assertAlmostEqual(float(stats[0]), 473.185, places=1)  # amount median
+        self.assertEqual(float(stats[1]), 15.0)                    # transaction_hour median
+        self.assertEqual(float(stats[2]), 15.0)                    # transaction_day median
+        self.assertEqual(float(stats[3]), 3.0)                     # transaction_month median
+        self.assertEqual(float(stats[4]), 3.0)                     # day_of_week median
+        self.assertEqual(float(stats[5]), 0.0)                     # is_weekend median
 
         # 2. Categorical imputer verification
         cat_imputer = preprocessor.named_transformers_["categorical"].named_steps["imputer"]
         cat_stats = cat_imputer.statistics_
-        # Expected features: ['category', 'gender']
-        self.assertEqual(str(cat_stats[1]), "F")                    # gender mode
+        # Expected features: ['merchant_category', 'transaction_type']
+        self.assertEqual(str(cat_stats[0]), "kirana_groceries")    # merchant_category mode
+        self.assertEqual(str(cat_stats[1]), "P2M")                 # transaction_type mode
 
-        # 3. Transform verification with np.nan
+        # 3. Transform verification with valid sample
         sample_df = pd.DataFrame([{
-            "category": "grocery_pos",
-            "gender": np.nan,
-            "amt": 50.0,
-            "lat": np.nan,
-            "long": np.nan,
-            "city_pop": np.nan,
-            "merch_lat": np.nan,
-            "merch_long": np.nan,
+            "merchant_category": "kirana_groceries",
+            "transaction_type": "P2M",
+            "amount": 250.0,
             "transaction_hour": 14,
-            "transaction_day": 15,
-            "transaction_month": 6,
+            "transaction_day": 12,
+            "transaction_month": 3,
+            "day_of_week": 1,
+            "is_weekend": 0,
         }])
         transformed = preprocessor.transform(sample_df)
-        self.assertEqual(transformed.shape, (1, 25))
+        self.assertEqual(transformed.shape[1], 16)
         self.assertTrue(np.all(np.isfinite(transformed if isinstance(transformed, np.ndarray) else transformed.toarray())))
 
     def test_18_evaluation_report_dual_benchmark_verification(self):
@@ -641,32 +652,19 @@ class FraudLensApiTestCase(unittest.TestCase):
         self.assertIn("masked_inference_features", disclosures)
 
     def test_21_explanation_probability_reconstruction_and_additivity(self):
-        """Verify decision-path probability reconstruction and additivity within 1e-7 across diverse inputs."""
+        """Verify decision-path probability reconstruction and additivity within 1e-7 across diverse Indian UPI inputs."""
         self.assertIsNotNone(explainer, "DecisionPathExplainer must be initialized")
 
         test_inputs = [
-            {"amt": 15.0, "category": "grocery_pos", "transaction_hour": 10, "transaction_day": 3, "transaction_month": 5},
-            {"amt": 125.50, "category": "gas_transport", "transaction_hour": 8, "transaction_day": 14, "transaction_month": 8},
-            {"amt": 980.0, "category": "shopping_net", "transaction_hour": 23, "transaction_day": 21, "transaction_month": 11},
-            {"amt": 3500.0, "category": "misc_net", "transaction_hour": 2, "transaction_day": 1, "transaction_month": 1},
-            {"amt": 45.0, "category": "travel", "transaction_hour": 14, "transaction_day": 15, "transaction_month": 6},
+            {"amount": 150.0, "merchant_category": "kirana_groceries", "transaction_type": "P2M", "transaction_hour": 10, "transaction_day": 3, "transaction_month": 5, "day_of_week": 4, "is_weekend": 0},
+            {"amount": 1250.50, "merchant_category": "travel_ticketing", "transaction_type": "P2M", "transaction_hour": 8, "transaction_day": 14, "transaction_month": 8, "day_of_week": 2, "is_weekend": 0},
+            {"amount": 9800.0, "merchant_category": "shopping_retail", "transaction_type": "P2M", "transaction_hour": 23, "transaction_day": 21, "transaction_month": 11, "day_of_week": 3, "is_weekend": 0},
+            {"amount": 35000.0, "merchant_category": "p2p_transfer", "transaction_type": "P2P", "transaction_hour": 2, "transaction_day": 1, "transaction_month": 1, "day_of_week": 6, "is_weekend": 1},
+            {"amount": 450.0, "merchant_category": "food_dining", "transaction_type": "P2M", "transaction_hour": 14, "transaction_day": 15, "transaction_month": 6, "day_of_week": 5, "is_weekend": 1},
         ]
 
         for idx, t_in in enumerate(test_inputs):
-            df = pd.DataFrame([{
-                "category": t_in["category"],
-                "gender": np.nan,
-                "amt": t_in["amt"],
-                "lat": np.nan,
-                "long": np.nan,
-                "city_pop": np.nan,
-                "merch_lat": np.nan,
-                "merch_long": np.nan,
-                "transaction_hour": t_in["transaction_hour"],
-                "transaction_day": t_in["transaction_day"],
-                "transaction_month": t_in["transaction_month"],
-            }])
-
+            df = pd.DataFrame([t_in])
             res = explainer.explain(df)
 
             # Reconstruction error check: strictly within 1e-7
@@ -681,21 +679,18 @@ class FraudLensApiTestCase(unittest.TestCase):
             self.assertAlmostEqual(res["predicted_probability"], model_prob, places=4)
 
     def test_22_explanation_determinism(self):
-        """Verify that repeated explanations for the identical transaction are bit-for-bit deterministic."""
+        """Verify that repeated explanations for the identical Indian transaction are bit-for-bit deterministic."""
         self.assertIsNotNone(explainer)
 
         df = pd.DataFrame([{
-            "category": "shopping_net",
-            "gender": np.nan,
-            "amt": 850.0,
-            "lat": np.nan,
-            "long": np.nan,
-            "city_pop": np.nan,
-            "merch_lat": np.nan,
-            "merch_long": np.nan,
+            "merchant_category": "shopping_retail",
+            "transaction_type": "P2M",
+            "amount": 8500.0,
             "transaction_hour": 22,
             "transaction_day": 18,
             "transaction_month": 9,
+            "day_of_week": 2,
+            "is_weekend": 0,
         }])
 
         first = explainer.explain(df)
@@ -713,55 +708,43 @@ class FraudLensApiTestCase(unittest.TestCase):
                 self.assertEqual(f1["impact_percentage"], f2["impact_percentage"])
                 self.assertEqual(f1["direction"], f2["direction"])
 
-    def test_23_explanation_no_imputed_features_in_user_factors(self):
-        """Verify that imputed uncollected features (gender, coords, city_pop) are never presented as user-provided factors."""
+    def test_23_explanation_no_raw_encoder_dummies_in_user_factors(self):
+        """Verify that raw one-hot encoder dummy column names are never presented as factors."""
         self.assertIsNotNone(explainer)
 
         df = pd.DataFrame([{
-            "category": "shopping_pos",
-            "gender": np.nan,
-            "amt": 250.0,
-            "lat": np.nan,
-            "long": np.nan,
-            "city_pop": np.nan,
-            "merch_lat": np.nan,
-            "merch_long": np.nan,
+            "merchant_category": "shopping_retail",
+            "transaction_type": "P2M",
+            "amount": 2500.0,
             "transaction_hour": 15,
             "transaction_day": 10,
             "transaction_month": 4,
+            "day_of_week": 3,
+            "is_weekend": 0,
         }])
 
         res = explainer.explain(df)
         factor_features = [f["feature"] for f in res["factors"]]
 
-        forbidden = {"gender", "lat", "long", "city_pop", "merch_lat", "merch_long", "Gender", "Latitude", "Longitude", "City Pop"}
+        valid_features = {"Amount", "Merchant Category", "Transaction Type", "Transaction Hour", "Transaction Day", "Transaction Month", "Day of Week", "Weekend"}
         for f_name in factor_features:
-            self.assertNotIn(f_name, forbidden)
-            self.assertIn(f_name, ["Amount", "Merchant Category", "Transaction Hour", "Transaction Day", "Transaction Month"])
-
-        # Verify isolation metadata
-        self.assertIsInstance(res["imputed_context_contribution"], float)
-        self.assertEqual(
-            res["imputed_features_isolated"],
-            ["city_pop", "gender", "lat", "long", "merch_lat", "merch_long"],
-        )
+            self.assertIn(f_name, valid_features)
+            self.assertFalse(f_name.startswith("categorical__"))
+            self.assertFalse("onehot" in f_name.lower())
 
     def test_24_explanation_merchant_category_aggregation(self):
         """Verify that all one-hot category dummy contributions are aggregated into one Merchant Category factor."""
         self.assertIsNotNone(explainer)
 
         df = pd.DataFrame([{
-            "category": "shopping_net",
-            "gender": np.nan,
-            "amt": 950.0,
-            "lat": np.nan,
-            "long": np.nan,
-            "city_pop": np.nan,
-            "merch_lat": np.nan,
-            "merch_long": np.nan,
+            "merchant_category": "shopping_retail",
+            "transaction_type": "P2M",
+            "amount": 9500.0,
             "transaction_hour": 23,
             "transaction_day": 12,
             "transaction_month": 7,
+            "day_of_week": 4,
+            "is_weekend": 0,
         }])
 
         res = explainer.explain(df)
@@ -771,8 +754,8 @@ class FraudLensApiTestCase(unittest.TestCase):
         self.assertLessEqual(len(category_factors), 1)
         if category_factors:
             cat_f = category_factors[0]
-            self.assertEqual(cat_f["value"], "shopping_net")
-            self.assertIn("shopping_net", cat_f["description"])
+            self.assertEqual(cat_f["value"], "shopping_retail")
+            self.assertIn("shopping_retail", cat_f["description"])
 
         # Ensure no raw one-hot dummy column names leak into the explanation
         for f in res["factors"]:
@@ -784,9 +767,10 @@ class FraudLensApiTestCase(unittest.TestCase):
         payload = {
             "transactionId": "TXN-EXPL-001",
             "amount": 950.0,
-            "currency": "USD",
+            "currency": "INR",
             "channel": "UPI",
-            "merchantCategory": "shopping_net",
+            "transactionType": "P2M",
+            "merchantCategory": "Shopping & Retail",
             "country": "India",
             "hoursSincePrevTxn": 6.5,
         }
@@ -812,7 +796,6 @@ class FraudLensApiTestCase(unittest.TestCase):
         self.assertEqual(exp["target_class"], "Fraudulent")
         self.assertIn("base_probability", exp)
         self.assertIn("predicted_probability", exp)
-        self.assertIn("imputed_context_contribution", exp)
         self.assertIn("effective_baseline_probability", exp)
         self.assertIn("factors", exp)
         self.assertIn("disclaimer", exp)
@@ -823,37 +806,30 @@ class FraudLensApiTestCase(unittest.TestCase):
         """Verify explanation engine handling of edge cases and input validation errors."""
         self.assertIsNotNone(explainer)
 
-        # 1. Edge case: extremely small amount ($0.01)
+        # 1. Edge case: extremely small amount (Rs 0.01)
         small_df = pd.DataFrame([{
-            "category": "grocery_pos",
-            "gender": np.nan,
-            "amt": 0.01,
-            "lat": np.nan,
-            "long": np.nan,
-            "city_pop": np.nan,
-            "merch_lat": np.nan,
-            "merch_long": np.nan,
+            "merchant_category": "kirana_groceries",
+            "transaction_type": "P2M",
+            "amount": 0.01,
             "transaction_hour": 12,
             "transaction_day": 1,
             "transaction_month": 1,
+            "day_of_week": 0,
+            "is_weekend": 0,
         }])
         small_res = explainer.explain(small_df)
         self.assertLess(small_res["reconstruction_error"], 1e-7)
-        self.assertEqual(small_res["predicted_probability"], 0.0)
 
-        # 2. Edge case: maximum allowable amount ($100,000,000)
+        # 2. Edge case: maximum allowable amount (Rs 100,000,000)
         large_df = pd.DataFrame([{
-            "category": "shopping_net",
-            "gender": np.nan,
-            "amt": 100_000_000.0,
-            "lat": np.nan,
-            "long": np.nan,
-            "city_pop": np.nan,
-            "merch_lat": np.nan,
-            "merch_long": np.nan,
+            "merchant_category": "shopping_retail",
+            "transaction_type": "P2M",
+            "amount": 100_000_000.0,
             "transaction_hour": 23,
             "transaction_day": 31,
             "transaction_month": 12,
+            "day_of_week": 4,
+            "is_weekend": 0,
         }])
         large_res = explainer.explain(large_df)
         self.assertLess(large_res["reconstruction_error"], 1e-7)
@@ -942,15 +918,15 @@ class FraudLensApiTestCase(unittest.TestCase):
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def test_28_new_usd_transaction_persistence(self):
-        """Verify save_transaction explicitly stores currency='USD'."""
+    def test_28_new_inr_transaction_persistence(self):
+        """Verify save_transaction explicitly stores currency='INR'."""
         record = {
-            "transactionId": "TXN-CURR-USD-01",
-            "amount": 45.0,
-            "currency": "USD",
-            "channel": "Card",
-            "merchantCategory": "Groceries",
-            "country": "US",
+            "transactionId": "TXN-CURR-INR-01",
+            "amount": 450.0,
+            "currency": "INR",
+            "channel": "UPI",
+            "merchantCategory": "Kirana & Groceries",
+            "country": "India",
             "prediction": "Legitimate",
             "label": "Legitimate",
             "is_fraud": 0,
@@ -959,56 +935,62 @@ class FraudLensApiTestCase(unittest.TestCase):
             "risk_level": "Low",
         }
         res = save_transaction(self.test_db_path, record)
-        self.assertEqual(res["currency"], "USD")
+        self.assertEqual(res["currency"], "INR")
 
         # Verify from database
         txs, _ = get_transactions(self.test_db_path, limit=50)
-        saved = next(t for t in txs if t["transactionId"] == "TXN-CURR-USD-01")
-        self.assertEqual(saved["currency"], "USD")
+        saved = next(t for t in txs if t["transactionId"] == "TXN-CURR-INR-01")
+        self.assertEqual(saved["currency"], "INR")
 
     def test_29_explicit_currency_validation(self):
-        """Verify 400 Bad Request when unsupported currency (e.g., INR, EUR) is submitted."""
-        # Non-USD currency should be rejected with 400
-        res_inr = self.client.post(
+        """Verify 400 Bad Request when unsupported currency (USD, EUR) is submitted and INR is accepted."""
+        # USD currency should be rejected with 400
+        res_usd = self.client.post(
             "/api/predict",
-            json={"amount": 2500, "currency": "INR", "merchantCategory": "Groceries"},
+            json={"amount": 2500, "currency": "USD", "merchantCategory": "Kirana & Groceries"},
         )
-        self.assertEqual(res_inr.status_code, 400)
-        self.assertIn("calibrated exclusively for us dollars", res_inr.get_json()["error"].lower())
+        self.assertEqual(res_usd.status_code, 400)
+        self.assertIn("calibrated exclusively for indian rupees", res_usd.get_json()["error"].lower())
 
+        # EUR currency should be rejected with 400
         res_eur = self.client.post(
             "/api/predict",
-            json={"amount": 50, "currency": "EUR", "merchantCategory": "Groceries"},
+            json={"amount": 50, "currency": "EUR", "merchantCategory": "Kirana & Groceries"},
         )
         self.assertEqual(res_eur.status_code, 400)
         self.assertIn("unsupported currency", res_eur.get_json()["error"].lower())
 
-        # Valid USD currency accepted
-        res_usd = self.client.post(
+        # Valid INR currency accepted
+        res_inr = self.client.post(
             "/api/predict",
-            json={"amount": 50, "currency": "USD", "merchantCategory": "Groceries"},
+            json={
+                "amount": 500,
+                "currency": "INR",
+                "transactionType": "P2M",
+                "merchantCategory": "Kirana & Groceries",
+            },
         )
-        self.assertEqual(res_usd.status_code, 200)
-        self.assertEqual(res_usd.get_json()["currency"], "USD")
+        self.assertEqual(res_inr.status_code, 200)
+        self.assertEqual(res_inr.get_json()["currency"], "INR")
 
     def test_30_missing_currency_rejected_with_400(self):
         """Verify missing or empty currency in predict payload returns HTTP 400 Bad Request."""
         res_missing = self.client.post(
             "/api/predict",
-            json={"amount": 65.0, "merchantCategory": "Groceries"},
+            json={"amount": 650.0, "merchantCategory": "Kirana & Groceries"},
         )
         self.assertEqual(res_missing.status_code, 400)
         self.assertIn("currency is required", res_missing.get_json()["error"].lower())
 
         res_empty = self.client.post(
             "/api/predict",
-            json={"amount": 65.0, "currency": "   ", "merchantCategory": "Groceries"},
+            json={"amount": 650.0, "currency": "   ", "merchantCategory": "Kirana & Groceries"},
         )
         self.assertEqual(res_empty.status_code, 400)
         self.assertIn("currency is required", res_empty.get_json()["error"].lower())
 
     def test_31_get_transactions_currency_serialization(self):
-        """Verify GET /api/transactions returns currency as 'USD' or None for legacy records."""
+        """Verify GET /api/transactions returns currency as 'INR', 'USD', or None for legacy records."""
         # Save a legacy-like record with currency=None
         save_transaction(
             self.test_db_path,
@@ -1025,12 +1007,24 @@ class FraudLensApiTestCase(unittest.TestCase):
         save_transaction(
             self.test_db_path,
             {
-                "transactionId": "TXN-MODERN-USD",
+                "transactionId": "TXN-LEGACY-USD",
                 "amount": 75.0,
                 "currency": "USD",
                 "channel": "Card",
                 "merchantCategory": "Other",
                 "country": "US",
+            },
+        )
+        # Save an INR record
+        save_transaction(
+            self.test_db_path,
+            {
+                "transactionId": "TXN-MODERN-INR",
+                "amount": 1500.0,
+                "currency": "INR",
+                "channel": "UPI",
+                "merchantCategory": "Kirana & Groceries",
+                "country": "India",
             },
         )
 
@@ -1041,16 +1035,24 @@ class FraudLensApiTestCase(unittest.TestCase):
         legacy_item = next(t for t in txs if t["transactionId"] == "TXN-LEGACY-NULL")
         self.assertIsNone(legacy_item["currency"])
 
-        modern_item = next(t for t in txs if t["transactionId"] == "TXN-MODERN-USD")
-        self.assertEqual(modern_item["currency"], "USD")
+        usd_item = next(t for t in txs if t["transactionId"] == "TXN-LEGACY-USD")
+        self.assertEqual(usd_item["currency"], "USD")
 
-    def test_32_analytics_separation_of_unspecified_amounts(self):
-        """Verify GET /api/analytics segregates USD amount bands from unspecified legacy amounts."""
+        inr_item = next(t for t in txs if t["transactionId"] == "TXN-MODERN-INR")
+        self.assertEqual(inr_item["currency"], "INR")
+
+    def test_32_analytics_separation_of_inr_amounts(self):
+        """Verify GET /api/analytics segregates INR amount bands from USD and unspecified legacy amounts."""
         temp_dir = tempfile.mkdtemp()
         db_path = os.path.join(temp_dir, "analytics_test.db")
         try:
             init_db(db_path)
-            # Insert 1 USD transaction of $45 (band 0-1k)
+            # Insert 1 INR transaction of Rs 450 (band 0-1k)
+            save_transaction(
+                db_path,
+                {"transactionId": "TX-INR-1", "amount": 450.0, "currency": "INR", "is_fraud": 0},
+            )
+            # Insert 1 USD transaction of $45 (band 0-1k in USD)
             save_transaction(
                 db_path,
                 {"transactionId": "TX-USD-1", "amount": 45.0, "currency": "USD", "is_fraud": 0},
@@ -1064,25 +1066,51 @@ class FraudLensApiTestCase(unittest.TestCase):
             from database import get_analytics
             analytics = get_analytics(db_path)
 
-            self.assertEqual(analytics["amountBandsCurrency"], "USD")
+            self.assertEqual(analytics["amountBandsCurrency"], "INR")
             self.assertEqual(analytics["amountBandsTotal"], 1)
-            # USD band 0-1k should have count 1, all other USD bands 0
-            usd_band_0_1k = next(b for b in analytics["amountBands"] if b["band"] == "0–1k")
-            self.assertEqual(usd_band_0_1k["count"], 1)
-            usd_band_3_6k = next(b for b in analytics["amountBands"] if b["band"] == "3k–6k")
-            self.assertEqual(usd_band_3_6k["count"], 0)
+            # INR band 0-1k should have count 1, all other INR bands 0
+            inr_band_0_1k = next(b for b in analytics["amountBands"] if b["band"] == "0–1k")
+            self.assertEqual(inr_band_0_1k["count"], 1)
+            inr_band_3_6k = next(b for b in analytics["amountBands"] if b["band"] == "3k–6k")
+            self.assertEqual(inr_band_3_6k["count"], 0)
 
-            # Unspecified band 3k-6k should have count 1
-            self.assertEqual(analytics["unspecifiedAmountTotal"], 1)
-            unspec_3_6k = next(b for b in analytics["unspecifiedAmountBands"] if b["band"] == "3k–6k")
-            self.assertEqual(unspec_3_6k["count"], 1)
+            # Segregated non-INR count should be 2 (1 USD + 1 legacy unspecified)
+            self.assertEqual(analytics["unspecifiedAmountTotal"], 2)
 
-            # Disclosure is present
+            # Disclosure is present and mentions Indian Rupees
             self.assertIn("amountBandsDisclosure", analytics)
-            self.assertIn("US Dollars", analytics["amountBandsDisclosure"])
+            self.assertIn("Indian Rupees", analytics["amountBandsDisclosure"])
 
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_33_invalid_transaction_type_rejection(self):
+        """Verify 400 Bad Request when invalid transaction type is provided."""
+        res = self.client.post(
+            "/api/predict",
+            json={
+                "amount": 500,
+                "currency": "INR",
+                "transactionType": "INVALID_TYPE",
+                "merchantCategory": "Kirana & Groceries",
+            },
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("invalid transaction type", res.get_json()["error"].lower())
+
+    def test_34_invalid_merchant_category_rejection(self):
+        """Verify 400 Bad Request when unmapped or invalid merchant category is provided."""
+        res = self.client.post(
+            "/api/predict",
+            json={
+                "amount": 500,
+                "currency": "INR",
+                "transactionType": "P2M",
+                "merchantCategory": "Cryptocurrency_Mining",
+            },
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("invalid or unsupported merchant category", res.get_json()["error"].lower())
 
 
 if __name__ == "__main__":

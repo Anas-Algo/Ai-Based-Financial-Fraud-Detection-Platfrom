@@ -30,6 +30,7 @@ export type TransactionInput = {
   amount: number;
   currency: string;
   channel: string;
+  transactionType?: string | undefined;
   merchantCategory: string;
   country: string;
   transactionTime?: string | undefined;
@@ -162,9 +163,9 @@ export type ApiErrorKind =
 const FRIENDLY: Record<ApiErrorKind, string> = {
   missing_url: "ML backend API not configured (VITE_FLASK_API_URL missing)",
   unavailable:
-    "The prediction service is currently unavailable. Ensure Flask is running on port 5000.",
+    "The prediction service is currently unavailable. Please verify the ML backend service status.",
   network:
-    "Could not reach the prediction service. Check your connection to http://127.0.0.1:5000.",
+    "Could not reach the prediction service. Please verify your connection to the ML backend API.",
   bad_request: "The service rejected the submitted transaction details. Please check the values.",
   not_found: "The requested API endpoint was not found on the server.",
   server: "The prediction service encountered an error processing the request.",

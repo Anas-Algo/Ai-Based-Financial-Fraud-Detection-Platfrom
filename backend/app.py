@@ -30,14 +30,20 @@ from database import (
 
 app = Flask(__name__)
 
-# Allow local frontend development origins (Vite on any port: 3000, 5173, 8080, 8081, etc.)
+# Configure CORS origins: permits local development by default; production domains configured via CORS_ALLOWED_ORIGINS
+cors_origins_env = os.environ.get("CORS_ALLOWED_ORIGINS", "").strip()
+if cors_origins_env:
+    allowed_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+else:
+    allowed_origins = [
+        re.compile(r"^http://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$")
+    ]
+
 CORS(
     app,
     resources={
         r"/api/*": {
-            "origins": [
-                re.compile(r"^http://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$")
-            ],
+            "origins": allowed_origins,
             "allow_private_network": True,
         }
     },
@@ -54,7 +60,8 @@ def add_cors_and_pna_headers(response):
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DB_PATH = os.path.join(BASE_DIR, "transactions.db")
 DB_PATH = DEFAULT_DB_PATH
-MODEL_PATH = os.path.join(BASE_DIR, "model", "fraud_detection_pipeline.pkl")
+MODEL_PATH = os.path.join(BASE_DIR, "model", "fraudlens_india_pipeline.pkl")
+LEGACY_MODEL_PATH = os.path.join(BASE_DIR, "model", "fraud_detection_pipeline.pkl")
 app.config.setdefault("DB_PATH", DEFAULT_DB_PATH)
 
 
@@ -106,52 +113,96 @@ except Exception as exc:
 
 
 # ==========================================
-# 3. FEATURE SCHEMA & MAPPING
+# 3. FEATURE SCHEMA & MAPPING (INDIAN UPI MODEL)
 # ==========================================
 
-# Explicit mapping between human-readable frontend categories and dataset categories
-CATEGORY_MAPPING = {
-    # UI Categories
-    "groceries": "grocery_pos",
-    "restaurants": "food_dining",
-    "electronics": "shopping_pos",
-    "clothing": "shopping_pos",
-    "travel": "travel",
-    "fuel": "gas_transport",
-    "healthcare": "health_fitness",
-    "entertainment": "entertainment",
-    "utilities": "misc_pos",
-    "other": "misc_net",
-    # Direct dataset category mappings
-    "entertainment": "entertainment",
-    "food_dining": "food_dining",
-    "gas_transport": "gas_transport",
-    "grocery_net": "grocery_net",
-    "grocery_pos": "grocery_pos",
-    "health_fitness": "health_fitness",
-    "home": "home",
-    "kids_pets": "kids_pets",
-    "misc_net": "misc_net",
-    "misc_pos": "misc_pos",
-    "personal_care": "personal_care",
-    "shopping_net": "shopping_net",
-    "shopping_pos": "shopping_pos",
-}
-
-# The exact feature columns and order expected by the Scikit-learn Pipeline
+# The 8 exact feature columns and order expected by the fitted Indian UPI Pipeline
 MODEL_COLUMNS = [
-    "category",
-    "gender",
-    "amt",
-    "lat",
-    "long",
-    "city_pop",
-    "merch_lat",
-    "merch_long",
+    "merchant_category",
+    "transaction_type",
+    "amount",
     "transaction_hour",
     "transaction_day",
     "transaction_month",
+    "day_of_week",
+    "is_weekend",
 ]
+
+# Supported merchant categories for the Indian UPI benchmark model
+SUPPORTED_CATEGORIES = {
+    "kirana_groceries",
+    "quick_commerce",
+    "food_dining",
+    "shopping_retail",
+    "utility_bills",
+    "travel_ticketing",
+    "p2p_transfer",
+    "entertainment",
+}
+
+# Supported transaction types
+SUPPORTED_TRANSACTION_TYPES = {"P2P", "P2M"}
+
+# Supported standard channels (audit metadata)
+CHANNEL_MAPPING = {
+    "upi": "UPI",
+    "card": "Card",
+    "transfer": "Transfer",
+    "wallet": "Wallet",
+    "atm": "ATM",
+}
+
+# Mapping user-friendly / frontend category representations to the 8 trained categories
+INDIAN_CATEGORY_MAPPING = {
+    # Direct model categories
+    "kirana_groceries": "kirana_groceries",
+    "quick_commerce": "quick_commerce",
+    "food_dining": "food_dining",
+    "shopping_retail": "shopping_retail",
+    "utility_bills": "utility_bills",
+    "travel_ticketing": "travel_ticketing",
+    "p2p_transfer": "p2p_transfer",
+    "entertainment": "entertainment",
+    # UI and user synonyms
+    "kirana & groceries": "kirana_groceries",
+    "kirana": "kirana_groceries",
+    "groceries": "kirana_groceries",
+    "grocery": "kirana_groceries",
+    "grocery_pos": "kirana_groceries",
+    "grocery_net": "kirana_groceries",
+    "quick commerce": "quick_commerce",
+    "instant delivery": "quick_commerce",
+    "instant_delivery": "quick_commerce",
+    "food & dining": "food_dining",
+    "food": "food_dining",
+    "dining": "food_dining",
+    "restaurants": "food_dining",
+    "shopping & retail": "shopping_retail",
+    "shopping": "shopping_retail",
+    "retail": "shopping_retail",
+    "shopping_pos": "shopping_retail",
+    "shopping_net": "shopping_retail",
+    "electronics": "shopping_retail",
+    "clothing": "shopping_retail",
+    "bill payments & utilities": "utility_bills",
+    "utility bills": "utility_bills",
+    "utilities": "utility_bills",
+    "bills": "utility_bills",
+    "misc_pos": "utility_bills",
+    "travel & ticketing": "travel_ticketing",
+    "travel": "travel_ticketing",
+    "ticketing": "travel_ticketing",
+    "gas_transport": "travel_ticketing",
+    "transport": "travel_ticketing",
+    "fuel": "travel_ticketing",
+    "peer-to-peer transfer": "p2p_transfer",
+    "peer to peer transfer": "p2p_transfer",
+    "p2p transfer": "p2p_transfer",
+    "p2p": "p2p_transfer",
+    "transfer": "p2p_transfer",
+    "movies": "entertainment",
+    "gaming": "entertainment",
+}
 
 
 # ==========================================
@@ -194,11 +245,13 @@ def home():
 @app.route("/api/health", methods=["GET"])
 def health():
     stats = get_stats(get_db_path())
+    is_loaded = model is not None
     return jsonify({
-        "status": "healthy",
-        "model_loaded": model is not None,
+        "status": "healthy" if is_loaded else "degraded",
+        "model_loaded": is_loaded,
         "database": "connected",
-        "model_name": "RandomForestClassifier Pipeline",
+        "model_name": "Indian UPI RandomForest Pipeline",
+        "currency": "INR",
         "total_records": stats["totalTransactions"],
     })
 
@@ -211,7 +264,7 @@ def health():
 def predict():
     if model is None:
         return jsonify({
-            "error": "Machine learning prediction service is currently unavailable. Model not loaded."
+            "error": "Machine learning prediction service is currently unavailable. Indian UPI model not loaded."
         }), 503
 
     # 1. Parse JSON body safely
@@ -222,7 +275,6 @@ def predict():
         }), 400
 
     # 2. Validate Amount
-    # Accept amount or amt
     raw_amount = data.get("amount", data.get("amt"))
     if raw_amount is None or raw_amount == "":
         return jsonify({"error": "Transaction amount is required."}), 400
@@ -241,46 +293,75 @@ def predict():
     if amount > 100_000_000:
         return jsonify({"error": "Amount exceeds maximum permitted limit (100,000,000)."}), 400
 
-    # 2b. Validate Required Currency ("USD")
+    # 3. Validate Required Currency ("INR")
     raw_currency = data.get("currency")
     if raw_currency is None or str(raw_currency).strip() == "":
         return jsonify({
-            "error": "Transaction currency is required and must be 'USD'. The model is calibrated exclusively for US Dollars."
+            "error": "Transaction currency is required and must be 'INR'. The model is calibrated exclusively for Indian Rupees (INR)."
         }), 400
 
     cand_currency = str(raw_currency).strip().upper()
-    if cand_currency != "USD":
+    if cand_currency != "INR":
         return jsonify({
             "error": (
-                f"The machine learning model is calibrated exclusively for US Dollars (USD). "
-                f"Unsupported currency: '{raw_currency}'. Please provide transaction amounts in USD."
+                f"The machine learning model is calibrated exclusively for Indian Rupees (INR). "
+                f"Unsupported currency: '{raw_currency}'. Please provide transaction amounts in INR."
             )
         }), 400
-    currency = "USD"
+    currency = "INR"
 
-    # 3. Transaction ID
+    # 4. Validate & Normalize Transaction Type ("P2M" or "P2P")
+    raw_tx_type = data.get("transactionType", data.get("transaction_type", data.get("type")))
+    if raw_tx_type is not None and str(raw_tx_type).strip():
+        cand_tx_type = str(raw_tx_type).strip().upper()
+        if cand_tx_type not in SUPPORTED_TRANSACTION_TYPES:
+            return jsonify({
+                "error": f"Invalid transaction type '{raw_tx_type}'. Supported types: 'P2M' (Person-to-Merchant) and 'P2P' (Peer-to-Peer)."
+            }), 400
+        tx_type = cand_tx_type
+    else:
+        tx_type = None  # Will default based on category below
+
+    # 5. Validate & Normalize Merchant Category
+    category_input = str(
+        data.get("merchantCategory")
+        or data.get("merchant_category")
+        or data.get("category")
+        or ""
+    ).strip()
+
+    if not category_input:
+        return jsonify({
+            "error": f"Merchant category is required. Supported categories: {', '.join(sorted(SUPPORTED_CATEGORIES))}."
+        }), 400
+
+    normalized_cat_key = category_input.lower().replace("-", " ").strip()
+    model_category = (
+        INDIAN_CATEGORY_MAPPING.get(normalized_cat_key)
+        or INDIAN_CATEGORY_MAPPING.get(normalized_cat_key.replace(" ", "_"))
+        or INDIAN_CATEGORY_MAPPING.get(category_input.lower())
+    )
+
+    if not model_category or model_category not in SUPPORTED_CATEGORIES:
+        return jsonify({
+            "error": f"Invalid or unsupported merchant category: '{category_input}'. Supported categories: {', '.join(sorted(SUPPORTED_CATEGORIES))}."
+        }), 400
+
+    # Default transaction_type if not explicitly provided
+    if tx_type is None:
+        tx_type = "P2P" if model_category == "p2p_transfer" else "P2M"
+
+    # 6. Transaction ID
     raw_id = str(data.get("transactionId") or data.get("transaction_id") or "").strip()
     if not raw_id:
         raw_id = f"TXN-{int(datetime.now(timezone.utc).timestamp() * 1000)}"
     elif len(raw_id) > 100:
         return jsonify({"error": "Transaction ID is too long (maximum 100 characters)."}), 400
 
-    # 4. Merchant Category Mapping
-    category_input = str(
-        data.get("merchantCategory")
-        or data.get("merchant_category")
-        or data.get("category")
-        or "Other"
-    ).strip()
-
-    normalized_cat_key = category_input.lower().replace(" ", "_")
-    model_category = CATEGORY_MAPPING.get(normalized_cat_key, "misc_net")
-
-    # 5. Presentation / metadata fields (not fed to ML model)
-    # The RandomForest pipeline was trained on credit card POS/ecommerce data and does not have a direct UPI feature column.
-    # The user's selected channel (UPI, Card, Transfer, etc.) is preserved as audit metadata in SQLite for display.
-    channel = str(data.get("channel") or "UPI").strip()
-    country = str(data.get("country") or "Other").strip()
+    # 7. Audit metadata fields (stored in SQLite for display, not fed to 8-feature ML pipeline)
+    raw_channel = str(data.get("channel") or "UPI").strip()
+    channel = CHANNEL_MAPPING.get(raw_channel.lower(), raw_channel)
+    country = str(data.get("country") or "India").strip()
     try:
         hours_since_prev = float(data.get("hoursSincePrevTxn", data.get("hours_since_prev_txn", 0.0)))
         if hours_since_prev < 0:
@@ -288,8 +369,7 @@ def predict():
     except (ValueError, TypeError):
         hours_since_prev = 0.0
 
-    # 6. Transaction time vs Recorded/Analysis time
-    # Check whether the client explicitly provided a payment transaction time:
+    # 8. Transaction time vs Recorded/Analysis time (IST)
     raw_time = (
         data.get("transactionTime")
         or data.get("transaction_time")
@@ -306,7 +386,10 @@ def predict():
         try:
             parsed_dt = pd.to_datetime(raw_time)
             if not pd.isna(parsed_dt):
-                tx_dt = parsed_dt
+                if parsed_dt.tzinfo is None:
+                    tx_dt = parsed_dt.tz_localize(IST_TZ)
+                else:
+                    tx_dt = parsed_dt.tz_convert(IST_TZ)
                 has_transaction_time = True
             else:
                 tx_dt = analysis_now
@@ -315,50 +398,27 @@ def predict():
     else:
         tx_dt = analysis_now
 
-    # 7. Uncollected model features (demographic & geographic)
-    # The saved pipeline was fitted on 11 features including demographic and geographic fields.
-    # Rather than injecting hardcoded magic numbers, pass np.nan for uncollected features
-    # so the pipeline's fitted SimpleImputer applies its learned training statistics.
-    raw_gender = data.get("gender")
-    if raw_gender is not None and str(raw_gender).strip().upper() in ("F", "M"):
-        gender = str(raw_gender).strip().upper()
-    else:
-        gender = np.nan
+    # 9. Extract temporal features for Indian model in IST
+    transaction_hour = int(tx_dt.hour)
+    transaction_day = int(tx_dt.day)
+    transaction_month = int(tx_dt.month)
+    day_of_week = int(tx_dt.weekday())  # 0=Monday, 6=Sunday
+    is_weekend = 1 if day_of_week >= 5 else 0
 
-    def parse_optional_float(val: Any) -> float:
-        if val is None or val == "":
-            return np.nan
-        try:
-            parsed = float(val)
-            if math.isnan(parsed) or math.isinf(parsed):
-                return np.nan
-            return parsed
-        except (ValueError, TypeError):
-            return np.nan
-
-    lat = parse_optional_float(data.get("lat"))
-    long = parse_optional_float(data.get("long"))
-    city_pop = parse_optional_float(data.get("city_pop"))
-    merch_lat = parse_optional_float(data.get("merch_lat"))
-    merch_long = parse_optional_float(data.get("merch_long"))
-
-    # 8. Construct input DataFrame matching exact training feature schema
+    # 10. Construct input DataFrame matching exact 8-feature training schema
     feature_dict = {
-        "category": str(model_category),
-        "gender": gender,
-        "amt": float(amount),
-        "lat": lat,
-        "long": long,
-        "city_pop": city_pop,
-        "merch_lat": merch_lat,
-        "merch_long": merch_long,
-        "transaction_hour": int(tx_dt.hour),
-        "transaction_day": int(tx_dt.day),
-        "transaction_month": int(tx_dt.month),
+        "merchant_category": str(model_category),
+        "transaction_type": str(tx_type),
+        "amount": float(amount),
+        "transaction_hour": transaction_hour,
+        "transaction_day": transaction_day,
+        "transaction_month": transaction_month,
+        "day_of_week": day_of_week,
+        "is_weekend": is_weekend,
     }
     input_df = pd.DataFrame([feature_dict])[MODEL_COLUMNS]
 
-    # 9. Model Inference
+    # 11. Model Inference
     try:
         raw_pred = int(model.predict(input_df)[0])
 
@@ -391,7 +451,7 @@ def predict():
             "error": "The machine learning model encountered an error evaluating this transaction."
         }), 500
 
-    # 10. Persist transaction into SQLite database
+    # 12. Persist transaction into SQLite database
     tx_timestamp_str = (
         raw_time
         if (has_transaction_time and isinstance(raw_time, str) and raw_time)
@@ -419,7 +479,7 @@ def predict():
         },
     )
 
-    # 11. Generate per-transaction decision-path explanations
+    # 13. Generate per-transaction decision-path explanations
     explanations = None
     if explainer is not None:
         try:

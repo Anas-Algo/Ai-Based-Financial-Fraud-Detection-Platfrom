@@ -48,6 +48,7 @@ type FormState = {
   transactionId: string;
   amount: string;
   channel: string;
+  transactionType: string;
   merchantCategory: string;
   country: string;
 };
@@ -56,23 +57,27 @@ const initialForm: FormState = {
   transactionId: "",
   amount: "",
   channel: "UPI",
+  transactionType: "P2M",
   merchantCategory: "",
   country: "India",
 };
 
+const transactionTypes = [
+  { value: "P2M", label: "P2M (Person-to-Merchant)" },
+  { value: "P2P", label: "P2P (Peer-to-Peer)" },
+];
+
 const channels = ["UPI", "Card", "Transfer", "Wallet", "ATM"];
 
 const merchantCategories = [
-  "Groceries",
-  "Restaurants",
-  "Electronics",
-  "Clothing",
-  "Travel",
-  "Fuel",
-  "Healthcare",
+  "Kirana & Groceries",
+  "Quick Commerce",
+  "Food & Dining",
+  "Shopping & Retail",
+  "Bill Payments & Utilities",
+  "Travel & Ticketing",
+  "Peer-to-Peer Transfer",
   "Entertainment",
-  "Utilities",
-  "Other",
 ];
 
 const countries = [
@@ -104,6 +109,9 @@ function validate(form: FormState) {
     errors.amount = "Amount exceeds 100,000,000 limit.";
   }
 
+  if (!form.transactionType) {
+    errors.transactionType = "Transaction type is required.";
+  }
   if (!form.merchantCategory) {
     errors.merchantCategory = "Merchant category is required.";
   }
@@ -143,8 +151,9 @@ function AnalyzePage() {
     const response = await analyzeTransaction({
       transactionId: form.transactionId.trim(),
       amount: Number(form.amount),
-      currency: "USD",
+      currency: "INR",
       channel: form.channel,
+      transactionType: form.transactionType,
       merchantCategory: form.merchantCategory,
       country: form.country,
     });
@@ -185,7 +194,7 @@ function AnalyzePage() {
         <div className="flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-200">
           <ShieldCheck className="size-4 shrink-0 text-emerald-600" aria-hidden />
           <span>
-            Connected to Flask Machine Learning API (port 5000). Real-time inference and SQLite
+            Connected to Flask Machine Learning API. Real-time Indian UPI model inference and SQLite
             audit logging active.
           </span>
         </div>
@@ -232,19 +241,49 @@ function AnalyzePage() {
                   <div>
                     <Field
                       id="amount"
-                      label="Amount (USD)"
+                      label="Amount (INR / ₹)"
                       type="number"
                       value={form.amount}
                       onChange={set("amount")}
                       error={errors.amount}
-                      placeholder="45.00"
+                      placeholder="450.00"
                     />
                     <p className="mt-1 text-[11px] text-muted-foreground">
-                      The Random Forest model was trained on US credit card transactions and expects
-                      amounts in US Dollars ($).
+                      The Random Forest model is trained on the Indian UPI benchmark dataset and
+                      expects amounts in Indian Rupees (₹).
                     </p>
                   </div>
+
                   <div className="grid gap-2">
+                    <Label htmlFor="transactionType">Transaction Type</Label>
+                    <select
+                      id="transactionType"
+                      value={form.transactionType}
+                      onChange={(e) => set("transactionType")(e.target.value)}
+                      aria-invalid={Boolean(errors.transactionType)}
+                      aria-describedby={
+                        errors.transactionType ? "transactionType-error" : undefined
+                      }
+                      className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {transactionTypes.map((t) => (
+                        <option key={t.value} value={t.value}>
+                          {t.label}
+                        </option>
+                      ))}
+                    </select>
+                    {errors.transactionType ? (
+                      <p id="transactionType-error" className="text-xs text-destructive">
+                        {errors.transactionType}
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground">
+                        P2M for merchant payments, P2P for peer transfers.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="grid gap-2 sm:col-span-2">
                     <Label htmlFor="merchantCategory">Merchant Category</Label>
                     <select
                       id="merchantCategory"
@@ -273,11 +312,12 @@ function AnalyzePage() {
                   <div className="flex items-start gap-2.5 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-foreground/85 leading-relaxed sm:col-span-2">
                     <Clock className="size-4 shrink-0 mt-0.5 text-primary" aria-hidden />
                     <div>
-                      <span className="font-semibold text-foreground">Analysis Time Features:</span>{" "}
-                      Temporal model inputs (hour of day, day of month, calendar month) are derived
-                      automatically from the server clock in India Standard Time (IST) at the moment
-                      of evaluation. Uncollected demographic and geographic inputs use the
-                      pipeline&apos;s learned median/mode imputers.
+                      <span className="font-semibold text-foreground">
+                        Analysis Time & IST Features:
+                      </span>{" "}
+                      Temporal model inputs (hour of day, day of month, calendar month, day of week,
+                      weekend indicator) are derived automatically from the server clock in India
+                      Standard Time (IST, UTC+05:30) at the moment of evaluation.
                     </div>
                   </div>
                 </div>
@@ -356,14 +396,12 @@ function AnalyzePage() {
                     <Info className="size-4 shrink-0 mt-0.5 text-muted-foreground" aria-hidden />
                     <div>
                       <span className="font-semibold text-foreground/90">
-                        Payment Rail & Dataset Notice:
+                        Payment Rail & Audit Notice:
                       </span>{" "}
-                      The underlying model was trained on a credit-card transaction dataset. The
-                      interface&apos;s channel selection (UPI, Card, Wallet, Transfer, ATM) and
-                      country are stored in the SQLite audit log for compliance, but{" "}
-                      <em>do not affect</em> the model&apos;s prediction score or risk probability.
-                      Selecting UPI or Wallet does not mean the model specifically evaluates those
-                      payment networks.
+                      The Indian UPI model directly evaluates amount (INR), transaction type
+                      (P2M/P2P), merchant category, and IST temporal features. Payment channel (UPI,
+                      Card, Wallet, Transfer, ATM) and country are preserved in the SQLite audit log
+                      for compliance records.
                     </div>
                   </div>
                 </div>
@@ -412,8 +450,7 @@ function AnalyzePage() {
                   <PlugZap className="size-4" aria-hidden /> {result.message}
                 </p>
                 <p className="mt-2 text-xs text-warning-foreground/90">
-                  Please verify that the Flask backend is running on{" "}
-                  <code className="font-mono">http://127.0.0.1:5000</code>.
+                  Please verify that the Flask backend is running and reachable.
                 </p>
               </div>
             ) : result?.status === "ok" ? (
@@ -470,7 +507,7 @@ function AnalyzePage() {
                     {(() => {
                       const formatted = formatTransactionAmount(
                         result.prediction.amount,
-                        result.prediction.currency || "USD",
+                        result.prediction.currency || "INR",
                       );
                       return (
                         <div className="flex items-center gap-1.5">
@@ -572,9 +609,8 @@ function AnalyzePage() {
                       </div>
                     </div>
                     <p className="text-[10px] text-muted-foreground leading-tight px-0.5">
-                      Note: Uncollected demographic & geographic features (gender, coordinates, city
-                      population) are held at training dataset medians/modes as static background
-                      context and are not user-submitted factors.
+                      Note: Feature attributions are computed from the ensemble decision tree paths
+                      using the exact 8-feature Indian UPI schema.
                     </p>
 
                     {/* Factors List */}
@@ -651,9 +687,10 @@ function AnalyzePage() {
 
                 <div className="rounded-lg border border-border/60 bg-muted/30 p-2.5 text-[11px] text-muted-foreground leading-relaxed">
                   <span className="font-semibold text-foreground/85">Evaluation basis:</span>{" "}
-                  Classification is computed from amount, merchant category, and analysis time.
-                  Channel ({result.prediction.channel || "UPI"}) and Country (
-                  {result.prediction.country || "India"}) are recorded as contextual audit metadata.
+                  Classification is computed from amount (INR), transaction type, merchant category,
+                  and IST temporal features. Channel ({result.prediction.channel || "UPI"}) and
+                  Country ({result.prediction.country || "India"}) are recorded as contextual audit
+                  metadata.
                 </div>
               </div>
             ) : result?.status === "error" ? (

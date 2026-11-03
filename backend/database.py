@@ -386,7 +386,22 @@ def get_analytics(db_path: str) -> Dict[str, Any]:
             for r in trend_rows
         ]
 
-        # 4. Amount bands: Segregate USD amounts from legacy unspecified amounts
+        # 4. Amount bands: Segregate INR, USD, and legacy unspecified amounts
+        cursor.execute(
+            """
+            SELECT 
+                SUM(CASE WHEN amount < 1000 THEN 1 ELSE 0 END) AS band1,
+                SUM(CASE WHEN amount >= 1000 AND amount < 3000 THEN 1 ELSE 0 END) AS band2,
+                SUM(CASE WHEN amount >= 3000 AND amount < 6000 THEN 1 ELSE 0 END) AS band3,
+                SUM(CASE WHEN amount >= 6000 THEN 1 ELSE 0 END) AS band4,
+                COUNT(*) AS total_inr
+            FROM transactions
+            WHERE currency = 'INR'
+            """
+        )
+        inr_bands_row = cursor.fetchone()
+        inr_total_in_bands = inr_bands_row["total_inr"] or 0
+
         cursor.execute(
             """
             SELECT 
@@ -411,13 +426,20 @@ def get_analytics(db_path: str) -> Dict[str, Any]:
                 SUM(CASE WHEN amount >= 6000 THEN 1 ELSE 0 END) AS band4,
                 COUNT(*) AS total_unspecified
             FROM transactions
-            WHERE currency IS NULL OR currency != 'USD'
+            WHERE currency IS NULL
             """
         )
         unspecified_bands_row = cursor.fetchone()
         unspecified_total_in_bands = unspecified_bands_row["total_unspecified"] or 0
 
-    amount_bands = [
+    inr_amount_bands = [
+        {"band": "0–1k", "count": inr_bands_row["band1"] or 0},
+        {"band": "1k–3k", "count": inr_bands_row["band2"] or 0},
+        {"band": "3k–6k", "count": inr_bands_row["band3"] or 0},
+        {"band": "6k+", "count": inr_bands_row["band4"] or 0},
+    ]
+
+    usd_amount_bands = [
         {"band": "0–1k", "count": usd_bands_row["band1"] or 0},
         {"band": "1k–3k", "count": usd_bands_row["band2"] or 0},
         {"band": "3k–6k", "count": usd_bands_row["band3"] or 0},
@@ -431,6 +453,29 @@ def get_analytics(db_path: str) -> Dict[str, Any]:
         {"band": "6k+", "count": unspecified_bands_row["band4"] or 0},
     ]
 
+    # Select active primary currency for the UI amount distribution chart:
+    # Defaults to INR. If no INR records exist yet but USD records exist, uses USD.
+    if inr_total_in_bands > 0 or usd_total_in_bands == 0:
+        primary_currency = "INR"
+        primary_bands = inr_amount_bands
+        primary_total = inr_total_in_bands
+        segregated_count = usd_total_in_bands + unspecified_total_in_bands
+        disclosure_text = (
+            "Amount distribution aggregates transactions denominated in Indian Rupees (INR). "
+            "Historical records created in USD or prior to currency standardization have different "
+            "or unspecified currency units and are segregated to prevent cross-currency distortion."
+        )
+    else:
+        primary_currency = "USD"
+        primary_bands = usd_amount_bands
+        primary_total = usd_total_in_bands
+        segregated_count = inr_total_in_bands + unspecified_total_in_bands
+        disclosure_text = (
+            "Amount distribution aggregates transactions denominated in US Dollars (USD). "
+            "Historical records created prior to currency standardization have unspecified "
+            "currency units and are segregated to prevent cross-currency distortion."
+        )
+
     label_distribution = [
         {"name": "Legitimate", "value": legit_total},
         {"name": "Fraudulent", "value": fraud_total},
@@ -440,16 +485,16 @@ def get_analytics(db_path: str) -> Dict[str, Any]:
         "channelBreakdown": list(channel_counts.values()),
         "labelDistribution": label_distribution,
         "transactionTrend": trend_data,
-        "amountBands": amount_bands,
-        "amountBandsCurrency": "USD",
-        "amountBandsTotal": usd_total_in_bands,
+        "amountBands": primary_bands,
+        "amountBandsCurrency": primary_currency,
+        "amountBandsTotal": primary_total,
+        "inrAmountBands": inr_amount_bands,
+        "inrAmountTotal": inr_total_in_bands,
+        "usdAmountBands": usd_amount_bands,
+        "usdAmountTotal": usd_total_in_bands,
         "unspecifiedAmountBands": unspecified_amount_bands,
-        "unspecifiedAmountTotal": unspecified_total_in_bands,
-        "amountBandsDisclosure": (
-            "Amount distribution aggregates transactions denominated in US Dollars (USD). "
-            "Historical records created prior to currency standardization have unspecified "
-            "currency units and are segregated to prevent cross-currency distortion."
-        ),
+        "unspecifiedAmountTotal": segregated_count,
+        "amountBandsDisclosure": disclosure_text,
         "totalTransactions": legit_total + fraud_total,
         "fraudulentTransactions": fraud_total,
         "legitimateTransactions": legit_total,
